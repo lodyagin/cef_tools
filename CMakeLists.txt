@@ -1,28 +1,30 @@
 cmake_minimum_required(VERSION 2.6.4)
 
-project(nasdaq_trader)
+project(offscreen)
+
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 # fixme - only for debug configuration
 add_definitions(-D_DEBUG)
 
-find_package(Qt4 4.8 REQUIRED)
-include(${QT_USE_FILE})
-add_definitions(${QT_DEFINITIONS})
+find_package(CEF REQUIRED)
+find_package(GTK2 REQUIRED)
 
 set(CMAKE_CXX_FLAGS "-g -O0 -std=c++11 -Wall")
 
-set(prj1_SOURCES
-    prj1.cpp
+set(offscreen_SOURCES
+    offscreen.cpp
 )
 
-set(prj1_HEADERS
+set(offscreen_HEADERS
 )
-
-qt4_wrap_cpp(prj1_HEADERS_MOC ${prj1_HEADERS})
 
 include_directories(${CMAKE_SOURCE_DIR})
+include_directories(${CEF_INCLUDE_DIRS})
+include_directories(${GTK2_INCLUDE_DIRS})
 
-add_executable(prj1 ${prj1_HEADERS_MOC} ${prj1_SOURCES})
+add_executable(offscreen ${offscreen_SOURCES})
 
-target_link_libraries(prj1 ${QT_LIBRARIES})
+target_link_libraries(offscreen ${CEF_LIBRARIES})
+
 
