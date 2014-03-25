@@ -30,6 +30,7 @@ config.status
 core*
 log4cxx.properties
 moc_*.cxx*
+offscreen
 BROWSE
 CMakeCache.txt
 GPATH

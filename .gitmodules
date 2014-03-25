@@ -1,0 +1,9 @@
+[submodule "concurro"]
+	path = concurro
+	url = trading.kogorta.dp.ua:concurrent
+[submodule "PEvents"]
+	path = PEvents
+	url = trading.kogorta.dp.ua:PEvents
+[submodule "CUnit"]
+	path = CUnit
+	url = trading.kogorta.dp.ua:CUnit

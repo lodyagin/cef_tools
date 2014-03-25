@@ -6,9 +6,11 @@
  * @author Sergei Lodyagin
  */
 
+#include <iostream>
 #include <assert.h>
 #include "include/cef_app.h"
 #include "include/cef_client.h"
+#include "browser.h"
 
 #define REQUIRE_UI_THREAD()   assert(CefCurrentlyOn(TID_UI));
 #define REQUIRE_IO_THREAD()   assert(CefCurrentlyOn(TID_IO));
@@ -47,6 +49,7 @@ using namespace offscreen;
 
 int main(int argc, char* argv[])
 {
+  std::cout << "main started" << std::endl;
   const CefMainArgs main_args(argc, argv);
   CefRefPtr<application> app(new application);
 
@@ -56,6 +59,10 @@ int main(int argc, char* argv[])
   if (sub_exit >= 0)
     // it was a sub process, it is done, return
     return sub_exit;
+
+#if 0
+  gtk_init(&argc, &argv);
+#endif
 
   CefSettings settings;
   CefInitialize(main_args, settings, app.get(), nullptr);
@@ -69,10 +76,6 @@ void application::OnContextInitialized()
 {
   REQUIRE_UI_THREAD();
 
-  CefWindowInfo window_info;
-  CefRefPtr<handler> h(new handler());
-  CefBrowserSettings settings;
-
   std::string url;
 
   // Check if a "--url=" value was provided via the command-line. If so, use
@@ -84,12 +87,7 @@ void application::OnContextInitialized()
   url = "http://ibm.com";
 
   // Create the first browser window.
-  CefBrowserHost::CreateBrowserSync
-    (window_info, 
-     h.get(), 
-     url,
-     settings, 
-     nullptr);
+  browser_rep::instance().create_object(url);
 }
 
 }
