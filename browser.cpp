@@ -1,23 +1,65 @@
-#include "browser.h"
 #include "AutoRepository.hpp"
 
-namespace offscreen {
+#include "browser.h"
+#include "proc_browser.h"
+#include "task.h"
+
+namespace shared {
+
+using namespace curr;
+
+DEFINE_AXIS_NS(
+  BrowserAxis,
+  { "created",
+    "dom_ready",
+    "destroying"
+  },
+  { { "created", "dom_ready" },
+//    { "created", "destroying" }, //?
+    { "dom_ready", "destroying" }
+  }
+);
+
+DEFINE_STATE_CONST(browser, State, created);
+DEFINE_STATE_CONST(browser, State, dom_ready);
+DEFINE_STATE_CONST(browser, State, destroying);
+
+int browser::Par::
+get_id(const curr::ObjectCreationInfo&) const
+{
+  // to get the id we need create the browser ...
+
+  SCHECK(br_id != 0);
+  if (br_id > 0)
+    return br_id; // already created, not the first call
+
+  assert(br.get() == nullptr);
+
+  REQUIRE_UI_THREAD();
+  br = CefBrowserHost::CreateBrowserSync
+    (window_info,
+     new ::browser::handler::client,
+     url,
+     settings,
+     nullptr);
+
+  SCHECK(br.get());
+  br_id = br->GetIdentifier();
+  SCHECK(br_id > 0);
+  return br_id;
+}
 
 browser::browser(const curr::ObjectCreationInfo& oi, 
                  const Par& par)
-  : url(par.url)
+  : RObjectWithStates(createdState),
+    url(par.url),
+    br(par.br)
 {
-  br = CefBrowserHost::CreateBrowserSync
-    (par.window_info,
-     new handler(),
-     url,
-     par.settings,
-     nullptr);
-  SCHECK(br.get());
 }
 
 browser::~browser()
 {
+  move_to(*this, destroyingState);
   br->GetHost()->CloseBrowser
     (true /* without asking a user */);
 

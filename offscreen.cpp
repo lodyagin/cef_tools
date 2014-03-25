@@ -10,46 +10,85 @@
 #include <assert.h>
 #include "include/cef_app.h"
 #include "include/cef_client.h"
+
+#include "Logging.h"
+
+#include "task.h"
 #include "browser.h"
+#include "proc_browser.h"
 
-#define REQUIRE_UI_THREAD()   assert(CefCurrentlyOn(TID_UI));
-#define REQUIRE_IO_THREAD()   assert(CefCurrentlyOn(TID_IO));
-#define REQUIRE_FILE_THREAD() assert(CefCurrentlyOn(TID_FILE));
+using namespace curr;
 
-namespace offscreen {
+//! The code used by a renderer process only
+namespace renderer {
+namespace handler {
 
-class application 
-  : public CefApp, 
-    public CefBrowserProcessHandler
+class load : public CefLoadHandler
 {
 public:
-  /* CefApp */
+  void OnLoadStart(CefRefPtr<CefBrowser> br,
+                   CefRefPtr<CefFrame> fr) override;
+private:
+  IMPLEMENT_REFCOUNTING(load);
+};
+
+class renderer : public CefRenderProcessHandler
+{
+public:
+  CefRefPtr<CefLoadHandler> GetLoadHandler() override
+  {
+    return new load;
+  }
+
+  void OnBrowserCreated
+    (CefRefPtr<CefBrowser> br) override;
+
+  void OnBrowserDestroyed
+    (CefRefPtr<CefBrowser> br) override;
+
+private:
+  IMPLEMENT_REFCOUNTING(renderer);
+};
+
+}
+}
+
+//! The code shared for all processes.
+namespace shared {
+
+class application : public CefApp
+{
+public:
+  //! Gets CefBrowserProcessHandler from browser process
+  //! only. Use CefRenderProcessHandler for access same
+  //! things from a renderer process.
   CefRefPtr<CefBrowserProcessHandler> 
   GetBrowserProcessHandler() override
   {
-    return this;
+    return new ::browser::handler::browser;
   }
 
-  /* CefBrowserProcessHandler */
-  void OnContextInitialized() override;
+  CefRefPtr<CefRenderProcessHandler> 
+  GetRenderProcessHandler() override
+  {
+    return new renderer::handler::renderer;
+  }
 
-private:
-  IMPLEMENT_REFCOUNTING(application);
-};
-
-class handler : public CefClient
-{
 private:
   IMPLEMENT_REFCOUNTING(application);
 };
 
 }
 
-using namespace offscreen;
-
 int main(int argc, char* argv[])
 {
-  std::cout << "main started" << std::endl;
+  using namespace shared;
+
+  std::cout << "main started: ";
+  for (int i = 1; i < argc; i++)
+    std::cout << argv[i] << " ";
+  std::cout << std::endl;
+
   const CefMainArgs main_args(argc, argv);
   CefRefPtr<application> app(new application);
 
@@ -70,26 +109,84 @@ int main(int argc, char* argv[])
   CefShutdown();
 }
 
-namespace offscreen {
+namespace renderer { namespace handler {
 
-void application::OnContextInitialized() 
+void load::OnLoadStart
+  (CefRefPtr<CefBrowser> br,
+   CefRefPtr<CefFrame> fr)
 {
-  REQUIRE_UI_THREAD();
+  assert(br.get());
+  assert(fr.get());
 
-  std::string url;
+  struct Visitor : CefDOMVisitor
+  {
+    Visitor(shared::browser* br) : the_browser(br) 
+    {
+      SCHECK(br);
+    }
 
-  // Check if a "--url=" value was provided via the command-line. If so, use
-  // that instead of the default URL.
-  CefRefPtr<CefCommandLine> command_line =
-      CefCommandLine::GetGlobalCommandLine();
-  url = command_line->GetSwitchValue("url");
-  if (url.empty())
-  url = "http://ibm.com";
+    struct Listener : CefDOMEventListener
+    {
+      Listener(shared::browser* br) : the_browser(br) {}
 
-  // Create the first browser window.
-  browser_rep::instance().create_object(url);
+      void HandleEvent(CefRefPtr<CefDOMEvent> ev) override
+      {
+        // FIXME ensure browser is not destroyed yet
+        move_to(*the_browser, 
+                shared::browser::dom_readyState);
+      }
+
+      shared::browser* the_browser;
+      IMPLEMENT_REFCOUNTING(Listener);
+    };
+
+    void Visit(CefRefPtr<CefDOMDocument> d) override
+    {
+      if (auto root_node = d->GetDocument()) {
+        root_node->AddEventListener
+          (L"load", new Listener(the_browser), true);
+      }
+      else assert(false);
+    }
+
+    shared::browser* the_browser;
+
+    IMPLEMENT_REFCOUNTING(Visitor);
+  };
+
+  REQUIRE_RENDERER_THREAD(); // for VisitDOM
+  if (fr->IsMain()) {
+    fr->VisitDOM(
+      new Visitor(
+        shared::browser_repository::instance()
+          . get_object_by_id(br->GetIdentifier())
+      )
+    );
+  }
 }
 
+void renderer::OnBrowserCreated(CefRefPtr<CefBrowser> br)
+{
+  using namespace shared;
+
+  // register the new browser in the browser_repository
+  browser_repository::instance().create_object
+    (shared::browser::Par(br));
 }
+
+void renderer::OnBrowserDestroyed(CefRefPtr<CefBrowser> br)
+{
+  using namespace shared;
+
+  assert(br.get());
+  const int br_id = br->GetIdentifier();
+  assert(br_id > 0);
+  
+  // register the new browser in the browser_repository
+  browser_repository::instance().delete_object_by_id
+    (br_id, true);
+}
+
+}}
 
 

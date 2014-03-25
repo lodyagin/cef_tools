@@ -14,33 +14,53 @@
 
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
+#include "include/cef_load_handler.h"
 
 #include "AutoRepository.hpp"
 
-namespace offscreen {
+namespace shared {
+
+DECLARE_AXIS(BrowserAxis, curr::StateAxis);
 
 class browser 
-  //: public CefBrowser
-    //public RObjectWithStates
+  : public curr::RObjectWithStates<BrowserAxis>
 {
   friend std::ostream& 
   operator<<(std::ostream& out, const browser& br);
 
 public:
-  struct Par
+
+  //! @cond
+  DECLARE_STATES(BrowserAxis, State);
+  DECLARE_STATE_CONST(State, created);
+  DECLARE_STATE_CONST(State, dom_ready);
+  DECLARE_STATE_CONST(State, destroying);
+  //! @endcond
+
+  class Par
   {
+    friend class browser;
+
+  public:
     std::string url;
     CefWindowInfo window_info;
     CefBrowserSettings settings;
 
+    //! Create a new CefBrowser
     Par(const std::string& url_) : url(url_) {}
 
-    std::string get_id(const curr::ObjectCreationInfo&) const
-    {
-      return url;
-    }
+    //! Register the existing CefBrowser
+    Par(CefRefPtr<CefBrowser> br_) 
+      : br(br_), br_id(br->GetIdentifier())
+    {}
+
+    int get_id(const curr::ObjectCreationInfo&) const;
 
     PAR_DEFAULT_MEMBERS(browser);
+
+  protected:
+    mutable CefRefPtr<CefBrowser> br;
+    mutable int br_id = -1;
   };
 
   virtual ~browser();
@@ -54,39 +74,37 @@ public:
   }
 
 protected:
-  class handler : public CefClient
-  {
-  private:
-    IMPLEMENT_REFCOUNTING(application);
-  };
-
-  std::string url;
-
   browser(const curr::ObjectCreationInfo& oi, 
           const Par& par);
 
-#if 0
-public:
-  browser(CefRefPtr<CefBrowser> br_) : br(br_) 
-  {
-    assert(br.get());
-  }
-
-  CefBrowser* operator->()
-  {
-    return br.get();
-  }
-#endif
-
-protected:
+  std::string url;
   CefRefPtr<CefBrowser> br;
 };
 
 std::ostream& 
 operator<<(std::ostream& out, const browser& br);
 
-using browser_rep = 
-  curr::AutoRepository<browser, std::string>;
+#if 1
+using browser_repository = 
+  curr::AutoRepository<browser, int>;
+#else
+class browser_rep
+  : public curr::AutoRepository<browser, int>
+{
+public:
+  using Parent = curr::AutoRepository<browser, int>;
+
+  browser* get_object_by_id(int id) override
+  {
+    try {
+      return Parent::get_object_by_id(id);
+    }
+    catch (const NoSuchId&) {
+      return create_object(browser::Par());
+    }
+  }
+};
+#endif
 
 }
 
