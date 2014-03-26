@@ -16,6 +16,7 @@
 #include "task.h"
 #include "browser.h"
 #include "proc_browser.h"
+#include "dom_event.h"
 
 using namespace curr;
 
@@ -140,7 +141,8 @@ void load::OnLoadStart
         LOG_DEBUG(log, 
           "thread " 
           << RThread<std::thread>::current_pretty_id()
-          << "> HandleEvent: dom="
+          << "> HandleEvent: ev=" << ev
+          << ", dom="
           << ev->GetDocument()->GetBaseURL().ToString()
         );
         // FIXME ensure browser is not destroyed yet
@@ -159,7 +161,7 @@ void load::OnLoadStart
     {
       if (auto root_node = d->GetDocument()) {
         root_node->AddEventListener
-          (L"load", new Listener(the_browser), true);
+          (L"DOMContentLoaded", new Listener(the_browser), true);
       }
       else assert(false);
     }

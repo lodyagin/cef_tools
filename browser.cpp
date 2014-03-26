@@ -60,8 +60,11 @@ browser::browser(const curr::ObjectCreationInfo& oi,
 browser::~browser()
 {
   move_to(*this, destroyingState);
-  br->GetHost()->CloseBrowser
-    (true /* without asking a user */);
+
+  if(!CefCurrentlyOn(TID_RENDERER)) {
+    br->GetHost()->CloseBrowser
+      (true /* without asking a user */);
+  }
 
   // TODO wait, states
 }
