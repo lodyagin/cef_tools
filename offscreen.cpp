@@ -118,6 +118,12 @@ void load::OnLoadStart
   assert(br.get());
   assert(fr.get());
 
+  LOG_DEBUG(Logger<LOG::Root>, 
+    "thread " 
+    << RThread<std::thread>::current_pretty_id()
+    << "> OnLoadStart"
+  );
+
   struct Visitor : CefDOMVisitor
   {
     Visitor(shared::browser* br) : the_browser(br) 
@@ -131,13 +137,22 @@ void load::OnLoadStart
 
       void HandleEvent(CefRefPtr<CefDOMEvent> ev) override
       {
+        LOG_DEBUG(log, 
+          "thread " 
+          << RThread<std::thread>::current_pretty_id()
+          << "> HandleEvent: dom="
+          << ev->GetDocument()->GetBaseURL().ToString()
+        );
         // FIXME ensure browser is not destroyed yet
-        move_to(*the_browser, 
-                shared::browser::dom_readyState);
+        compare_and_move(
+          *the_browser, 
+          shared::browser::createdState,
+          shared::browser::dom_readyState);
       }
 
       shared::browser* the_browser;
       IMPLEMENT_REFCOUNTING(Listener);
+      typedef Logger<Listener> log;
     };
 
     void Visit(CefRefPtr<CefDOMDocument> d) override
