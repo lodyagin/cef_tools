@@ -51,7 +51,9 @@ get_id(const curr::ObjectCreationInfo&) const
 
 browser::browser(const curr::ObjectCreationInfo& oi, 
                  const Par& par)
-  : RObjectWithStates(createdState),
+  : RObjectWithEvents(createdState),
+    CONSTRUCT_EVENT(dom_ready),
+    id(par.br->GetIdentifier()),
     url(par.url),
     br(par.br)
 {

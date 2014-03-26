@@ -10,6 +10,7 @@
 #include <assert.h>
 #include "include/cef_app.h"
 #include "include/cef_client.h"
+#include "include/cef_task.h"
 
 #include "Logging.h"
 
@@ -17,6 +18,8 @@
 #include "browser.h"
 #include "proc_browser.h"
 #include "dom_event.h"
+#include "xpath.h"
+#include "search.h"
 
 using namespace curr;
 
@@ -49,6 +52,7 @@ public:
 
 private:
   IMPLEMENT_REFCOUNTING(renderer);
+  typedef Logger<renderer> log;
 };
 
 }
@@ -119,12 +123,6 @@ void load::OnLoadStart
   assert(br.get());
   assert(fr.get());
 
-  LOG_DEBUG(Logger<LOG::Root>, 
-    "thread " 
-    << RThread<std::thread>::current_pretty_id()
-    << "> OnLoadStart"
-  );
-
   struct Visitor : CefDOMVisitor
   {
     Visitor(shared::browser* br) : the_browser(br) 
@@ -138,14 +136,24 @@ void load::OnLoadStart
 
       void HandleEvent(CefRefPtr<CefDOMEvent> ev) override
       {
-        LOG_DEBUG(log, 
+#if 0
+//        LOG_DEBUG(log, 
+          std::cout <<
           "thread " 
           << RThread<std::thread>::current_pretty_id()
           << "> HandleEvent: ev=" << ev
           << ", dom="
           << ev->GetDocument()->GetBaseURL().ToString()
-        );
-        // FIXME ensure browser is not destroyed yet
+          << std::endl;
+//        );
+//        LOG_DEBUG(log, 
+          std::cout <<
+          xpath::select(
+            "object", ev->GetDocument()->GetBody()
+          ) << std::endl;
+//        );
+#endif
+        // FIXME ensure the_browser is not destroyed yet
         compare_and_move(
           *the_browser, 
           shared::browser::createdState,
@@ -154,7 +162,7 @@ void load::OnLoadStart
 
       shared::browser* the_browser;
       IMPLEMENT_REFCOUNTING(Listener);
-      typedef Logger<Listener> log;
+//      typedef Logger<Listener> log;
     };
 
     void Visit(CefRefPtr<CefDOMDocument> d) override
@@ -187,8 +195,26 @@ void renderer::OnBrowserCreated(CefRefPtr<CefBrowser> br)
   using namespace shared;
 
   // register the new browser in the browser_repository
-  browser_repository::instance().create_object
-    (shared::browser::Par(br));
+  const int browser_id = 
+    browser_repository::instance().create_object
+      (shared::browser::Par(br)) -> id;
+
+  // Start the dom_ready wait thread
+  StdThread::create<LightThread>([browser_id]()
+  {
+    CURR_WAIT(
+      browser_repository::instance()
+        . get_object_by_id(browser_id)
+        -> is_dom_ready(),
+      60001
+    );
+
+    // post the flash search task
+    CefPostTask(
+      TID_RENDERER, 
+      new ::renderer::search::flash(browser_id)
+    );
+  })->start();
 }
 
 void renderer::OnBrowserDestroyed(CefRefPtr<CefBrowser> br)

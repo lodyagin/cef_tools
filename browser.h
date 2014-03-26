@@ -17,16 +17,19 @@
 #include "include/cef_load_handler.h"
 
 #include "AutoRepository.hpp"
+#include "REvent.h"
 
 namespace shared {
 
 DECLARE_AXIS(BrowserAxis, curr::StateAxis);
 
 class browser 
-  : public curr::RObjectWithStates<BrowserAxis>
+  : public curr::RObjectWithEvents<BrowserAxis>
 {
   friend std::ostream& 
   operator<<(std::ostream& out, const browser& br);
+
+  DECLARE_EVENT(BrowserAxis, dom_ready);
 
 public:
 
@@ -63,6 +66,8 @@ public:
     mutable int br_id = -1;
   };
 
+  const int id;
+
   virtual ~browser();
 
   browser(const browser&) = delete;
@@ -70,7 +75,13 @@ public:
 
   std::string universal_id() const
   {
-    return url;
+    return curr::toString(id);
+  }
+
+  curr::CompoundEvent is_terminal_state() const override
+  {
+    // TODO
+    return curr::CompoundEvent();
   }
 
 protected:

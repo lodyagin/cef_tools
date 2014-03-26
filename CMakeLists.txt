@@ -22,8 +22,11 @@ add_subdirectory(concurro/C++)
 set(offscreen_SOURCES
     browser.cpp
     dom_event.cpp
+    search.cpp
     offscreen.cpp
     proc_browser.cpp
+    string_utils.cpp
+    xpath.cpp
 )
 
 set(offscreen_HEADERS
