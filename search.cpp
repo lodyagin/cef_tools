@@ -8,7 +8,8 @@
 
 #include "search.h"
 #include "browser.h"
-#include "SException.h"
+#include "xpath.h"
+#include "string_utils.h"
 
 using namespace curr;
 
@@ -18,7 +19,22 @@ void flash::Execute()
 {
   using namespace shared;
 
-  LOG_INFO(log, "DOM is ready");
+  struct Visitor : CefDOMVisitor
+  {
+    void Visit(CefRefPtr<CefDOMDocument> d) override
+    {
+      std::cout << "here: " << d->GetBaseURL() << std::endl;
+      LOG_DEBUG(log, 
+        xpath::select("object", d->GetBody())
+      );
+    }
+    IMPLEMENT_REFCOUNTING();
+    typedef curr::Logger<Visitor> log;
+  };
+
+  browser_repository::instance()
+    . get_object_by_id(browser_id) -> br
+    -> GetMainFrame() -> VisitDOM(new Visitor);
 }
 
 }}

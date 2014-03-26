@@ -15,9 +15,10 @@
 
 xpath::select::select(
   const std::string& tag_,
-  const CefRefPtr<CefDOMNode>& dom_
+  const CefRefPtr<CefDOMNode>& dom_,
+  int d
 ) 
-  : tag(tag_), dom(dom_)
+  : tag(tag_), dom(dom_), depth(d)
 {
   SCHECK(dom.get());
   std::transform(
@@ -25,18 +26,33 @@ xpath::select::select(
   );
 }
 
+#if 1
 std::ostream&
 operator<< (std::ostream& out, CefRefPtr<CefDOMNode> dom)
 {
   assert(dom.get());
+  if (!dom->IsElement())
+    return out << "(not_element)";
 
+#if 0
+  if (!dom->HasElementAttributes())
+    return out << "(not_attributes)";
+#endif
+
+#if 0
   CefDOMNode::AttributeMap attrs;
+  // it hang ups
   dom->GetElementAttributes(attrs);
-
+#endif
   out << '<' << dom->GetElementTagName();
+#if 0
   for (auto p : attrs)
     out << ' ' << p.first << "=\"" << p.second << '"';
   out << '>';
+#else
+  out << " type=\"" << dom->GetElementAttribute("TYPE")
+      << "\">";
+#endif
   return out;
 }
 
@@ -54,7 +70,7 @@ operator<< (std::ostream& out, const xpath::select& sel)
     ::tolower
   );
 
-  std::cout << tag_name << ' ';
+//  std::cout << tag_name << ' ' << std::flush;
 
   if (tag_name == sel.tag)
     out << sel.dom;
@@ -65,9 +81,10 @@ operator<< (std::ostream& out, const xpath::select& sel)
       node = node->GetNextSibling())
   {
     // TODO copy std::string - optimize it
-    out << xpath::select(sel.tag, node);
+    out << xpath::select(sel.tag, node, sel.depth + 1);
   }
   return out;
 }
+#endif
 
 

@@ -18,7 +18,6 @@
 #include "browser.h"
 #include "proc_browser.h"
 #include "dom_event.h"
-#include "xpath.h"
 #include "search.h"
 
 using namespace curr;
@@ -136,23 +135,14 @@ void load::OnLoadStart
 
       void HandleEvent(CefRefPtr<CefDOMEvent> ev) override
       {
-#if 0
-//        LOG_DEBUG(log, 
-          std::cout <<
+        LOG_DEBUG(log, 
           "thread " 
           << RThread<std::thread>::current_pretty_id()
           << "> HandleEvent: ev=" << ev
           << ", dom="
           << ev->GetDocument()->GetBaseURL().ToString()
           << std::endl;
-//        );
-//        LOG_DEBUG(log, 
-          std::cout <<
-          xpath::select(
-            "object", ev->GetDocument()->GetBody()
-          ) << std::endl;
-//        );
-#endif
+        );
         // FIXME ensure the_browser is not destroyed yet
         compare_and_move(
           *the_browser, 
@@ -162,7 +152,7 @@ void load::OnLoadStart
 
       shared::browser* the_browser;
       IMPLEMENT_REFCOUNTING(Listener);
-//      typedef Logger<Listener> log;
+      typedef Logger<Listener> log;
     };
 
     void Visit(CefRefPtr<CefDOMDocument> d) override

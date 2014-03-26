@@ -28,7 +28,7 @@ public:
   const int browser_id;
 
 private:
-  typedef curr::Logger<flash> log;
+//  typedef curr::Logger<flash> log;
   IMPLEMENT_REFCOUNTING();
 };
 

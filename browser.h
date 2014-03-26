@@ -84,12 +84,12 @@ public:
     return curr::CompoundEvent();
   }
 
+  const std::string url;
+  const CefRefPtr<CefBrowser> br;
+
 protected:
   browser(const curr::ObjectCreationInfo& oi, 
           const Par& par);
-
-  std::string url;
-  CefRefPtr<CefBrowser> br;
 };
 
 std::ostream& 
