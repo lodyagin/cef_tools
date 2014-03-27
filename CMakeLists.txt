@@ -25,6 +25,7 @@ set(offscreen_SOURCES
     search.cpp
     offscreen.cpp
     proc_browser.cpp
+    screenshotter.cpp
     string_utils.cpp
     xpath.cpp
 )

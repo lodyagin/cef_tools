@@ -19,6 +19,12 @@
 #include "proc_browser.h"
 #include "dom_event.h"
 #include "search.h"
+#include "screenshotter.h"
+
+// externally defined
+namespace screenshot {
+void take();
+}
 
 using namespace curr;
 
@@ -109,6 +115,7 @@ int main(int argc, char* argv[])
 
   CefSettings settings;
   CefInitialize(main_args, settings, app.get(), nullptr);
+  screenshot::take_delayed(20);
   CefRunMessageLoop();
   CefShutdown();
 }
