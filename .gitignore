@@ -6,7 +6,6 @@ locales
 *.1
 *.a
 *.cbp
-*.cmake
 *.err
 *.gz
 *.la
@@ -31,6 +30,7 @@ locales
 config.log
 config.status
 core*
+cmake_install.cmake
 log4cxx.properties
 moc_*.cxx*
 offscreen
