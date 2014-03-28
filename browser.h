@@ -50,10 +50,7 @@ public:
     CefBrowserSettings settings;
 
     //! Create a new CefBrowser
-    Par(const std::string& url_) : url(url_) 
-    {
-      //window_info.SetAsOffScreen(nullptr);
-    }
+    Par(const std::string& url_);
 
     //! Register the existing CefBrowser
     Par(CefRefPtr<CefBrowser> br_) 

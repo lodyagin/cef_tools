@@ -24,6 +24,11 @@ DEFINE_STATE_CONST(browser, State, created);
 DEFINE_STATE_CONST(browser, State, dom_ready);
 DEFINE_STATE_CONST(browser, State, destroying);
 
+browser::Par::Par(const std::string& url_) : url(url_) 
+{
+  window_info.SetAsOffScreen(nullptr);
+}
+
 int browser::Par::
 get_id(const curr::ObjectCreationInfo&) const
 {

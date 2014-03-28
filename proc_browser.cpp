@@ -22,8 +22,9 @@ void browser::OnContextInitialized()
 
   std::string url;
 
-  // Check if a "--url=" value was provided via the command-line. If so, use
-  // that instead of the default URL.
+  // Check if a "--url=" value was provided via the
+  // command-line. If so, use that instead of the default
+  // URL.
   CefRefPtr<CefCommandLine> command_line =
       CefCommandLine::GetGlobalCommandLine();
   url = command_line->GetSwitchValue("url");
@@ -33,6 +34,32 @@ void browser::OnContextInitialized()
   // Create the first browser window.
   shared::browser_repository::instance().create_object(url);
 }
+
+bool ::browser::handler::render::GetViewRect(
+  CefRefPtr<CefBrowser> browser,
+  CefRect& rect
+)
+{
+  rect.Set(0, 0, 2700, 2700);
+  return true;
+}
+
+void ::browser::handler::render::OnPaint(
+  CefRefPtr<CefBrowser> browser,
+  CefRenderHandler::PaintElementType type,
+  const CefRenderHandler::RectList& dirtyRects,
+  const void* buffer,
+  int width, 
+  int height
+)
+{
+  for (auto r : dirtyRects)
+    LOG_DEBUG(log, 
+      "(" << r.x << ", " << r.y << ", " 
+          << r.width << ", " << r.height << ")"
+    );
+}
+
 
 }}
 
