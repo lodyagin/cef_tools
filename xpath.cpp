@@ -26,7 +26,6 @@ xpath::select::select(
   );
 }
 
-#if 1
 std::ostream&
 operator<< (std::ostream& out, CefRefPtr<CefDOMNode> dom)
 {
@@ -53,6 +52,12 @@ operator<< (std::ostream& out, CefRefPtr<CefDOMNode> dom)
   out << " type=\"" << dom->GetElementAttribute("TYPE")
       << "\">";
 #endif
+
+#if 1
+  const CefRect r = dom->GetBoundingClientRect();
+  out << " [" << r.x << ", " << r.y << ", " << r.width
+      << ", " << r.height << "]";
+#endif
   return out;
 }
 
@@ -70,10 +75,8 @@ operator<< (std::ostream& out, const xpath::select& sel)
     ::tolower
   );
 
-//  std::cout << tag_name << ' ' << std::flush;
-
   if (tag_name == sel.tag)
-    out << sel.dom;
+    out << sel.dom << '\n';
 
   // recursion into childs
   for(auto node = sel.dom->GetFirstChild();
@@ -85,6 +88,5 @@ operator<< (std::ostream& out, const xpath::select& sel)
   }
   return out;
 }
-#endif
 
 
