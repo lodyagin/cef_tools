@@ -42,7 +42,7 @@ FIND_LIBRARY(CEF_WRAPPER_LIBRARY_RELEASE
 
 FIND_LIBRARY(CEF_WRAPPER_LIBRARY_DEBUG
   NAMES "libcef_dll_wrapper.a"
-  PATHS /usr/lib /usr/local/lib $ENV{CHROMIUM_SRC_DIR}/out/Release/obj/cef $ENV{CEF_DIR}/out/Debug/obj.target
+  PATHS /usr/lib /usr/local/lib $ENV{CHROMIUM_SRC_DIR}/out/Debug/obj/cef $ENV{CEF_DIR}/out/Debug/obj.target
   )
 
 if(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE)
