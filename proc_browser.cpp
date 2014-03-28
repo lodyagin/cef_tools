@@ -32,7 +32,10 @@ void browser::OnContextInitialized()
   url = "http://ibm.com";
 
   // Create the first browser window.
-  shared::browser_repository::instance().create_object(url);
+  shared::browser::Par par(url);
+  if(command_line->HasSwitch("off-screen"))
+    par.window_info.SetAsOffScreen(nullptr);
+  shared::browser_repository::instance().create_object(par);
 }
 
 bool ::browser::handler::render::GetViewRect(
@@ -54,8 +57,8 @@ void ::browser::handler::render::OnPaint(
 )
 {
   for (auto r : dirtyRects)
-    LOG_DEBUG(log, 
-      "(" << r.x << ", " << r.y << ", " 
+    LOG_TRACE(log, 
+      "render::OnPaint(" << r.x << ", " << r.y << ", " 
           << r.width << ", " << r.height << ")"
     );
 }

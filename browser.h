@@ -50,7 +50,7 @@ public:
     CefBrowserSettings settings;
 
     //! Create a new CefBrowser
-    Par(const std::string& url_);
+    Par(const std::string& url_) : url(url_) {}
 
     //! Register the existing CefBrowser
     Par(CefRefPtr<CefBrowser> br_) 
@@ -95,27 +95,8 @@ protected:
 std::ostream& 
 operator<<(std::ostream& out, const browser& br);
 
-#if 1
 using browser_repository = 
   curr::AutoRepository<browser, int>;
-#else
-class browser_rep
-  : public curr::AutoRepository<browser, int>
-{
-public:
-  using Parent = curr::AutoRepository<browser, int>;
-
-  browser* get_object_by_id(int id) override
-  {
-    try {
-      return Parent::get_object_by_id(id);
-    }
-    catch (const NoSuchId&) {
-      return create_object(browser::Par());
-    }
-  }
-};
-#endif
 
 }
 
