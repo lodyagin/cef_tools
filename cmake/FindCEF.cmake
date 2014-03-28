@@ -11,6 +11,7 @@
 
 # cef.h
 FIND_PATH(CEF_INCLUDE_DIR include/cef_app.h
+  $ENV{CHROMIUM_SRC_DIR}/cef
   $ENV{CEF_DIR}
   /usr/local/include
   /usr/include
@@ -25,27 +26,29 @@ FIND_PATH(CEF_INCLUDE_DIR include/cef_app.h
 
 FIND_LIBRARY(CEF_LIBRARY_RELEASE
   NAMES "libcef.so"
-  PATHS /usr/lib /usr/local/lib $ENV{CEF_DIR}/Release
+  PATHS /usr/lib /usr/local/lib $ENV{CHROMIUM_SRC_DIR}/out/Release/lib $ENV{CEF_DIR}/Release 
+
   )
 
 FIND_LIBRARY(CEF_LIBRARY_DEBUG
   NAMES "libcef.so"
-  PATHS /usr/lib /usr/local/lib $ENV{CEF_DIR}/Debug
+  PATHS /usr/lib /usr/local/lib $ENV{CHROMIUM_SRC_DIR}/out/Debug/lib $ENV{CEF_DIR}/Debug 
   )
 
 FIND_LIBRARY(CEF_WRAPPER_LIBRARY_RELEASE
   NAMES "libcef_dll_wrapper.a"
-  PATHS /usr/lib /usr/local/lib $ENV{CEF_DIR}/out/Release/obj.target
+  PATHS /usr/lib /usr/local/lib $ENV{CHROMIUM_SRC_DIR}/out/Debug/obj/cef $ENV{CEF_DIR}/out/Release/obj.target
   )
 
 FIND_LIBRARY(CEF_WRAPPER_LIBRARY_DEBUG
   NAMES "libcef_dll_wrapper.a"
-  PATHS /usr/lib /usr/local/lib $ENV{CEF_DIR}/out/Debug/obj.target
+  PATHS /usr/lib /usr/local/lib $ENV{CHROMIUM_SRC_DIR}/out/Release/obj/cef $ENV{CEF_DIR}/out/Debug/obj.target
   )
 
 if(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE)
   set( CEF_LIBRARIES
-    optimized ${CEF_LIBRARY_RELEASE} debug ${CEF_LIBRARY_DEBUG}
+    #optimized ${CEF_LIBRARY_RELEASE} 
+    debug ${CEF_LIBRARY_DEBUG}
     optimized ${CEF_WRAPPER_LIBRARY_RELEASE} debug ${CEF_WRAPPER_LIBRARY_DEBUG}
     )
 else()
