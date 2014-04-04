@@ -38,12 +38,20 @@ void browser::OnContextInitialized()
   shared::browser_repository::instance().create_object(par);
 }
 
+::browser::handler::render::render(int width_, int height_)
+  : width(width_), height(height_),
+    buf(boost::extents[height_][width_])
+{
+  SCHECK(width > 10);
+  SCHECK(height > 10);
+}
+
 bool ::browser::handler::render::GetViewRect(
   CefRefPtr<CefBrowser> browser,
   CefRect& rect
 )
 {
-  rect.Set(0, 0, 2700, 2700);
+  rect.Set(0, 0, width, height);
   return true;
 }
 
@@ -57,10 +65,31 @@ void ::browser::handler::render::OnPaint(
 )
 {
   for (auto r : dirtyRects)
+  {
     LOG_TRACE(log, 
       "render::OnPaint(" << r.x << ", " << r.y << ", " 
           << r.width << ", " << r.height << ")"
     );
+
+    // select a rectangular write region
+    point_buffer::array_view<2>::type dst =
+      buf[point_buffer::index_gen()
+        [range(r.y, r.y + r.height)]
+        [range(r.x, r.x + r.width)]
+      ];
+
+    // write the buffer into the region
+    const point& src = * (const point*) buffer;
+    int i = 0;
+
+    for (point_buffer::index row = 0; row < r.height; row++)
+    {
+      for (point_buffer::index col = 0; col < r.width; col++)
+      {
+        dst[row][col] = src[i++];
+      }
+    }
+  }
 }
 
 
