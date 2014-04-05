@@ -38,7 +38,7 @@ void browser::OnContextInitialized()
   shared::browser_repository::instance().create_object(par);
 }
 
-::browser::handler::render::render(int width_, int height_)
+render::render(int width_, int height_)
   : width(width_), height(height_),
     buf(boost::extents[height_][width_])
 {
@@ -46,7 +46,7 @@ void browser::OnContextInitialized()
   SCHECK(height > 10);
 }
 
-bool ::browser::handler::render::GetViewRect(
+bool render::GetViewRect(
   CefRefPtr<CefBrowser> browser,
   CefRect& rect
 )
@@ -55,7 +55,7 @@ bool ::browser::handler::render::GetViewRect(
   return true;
 }
 
-void ::browser::handler::render::OnPaint(
+void render::OnPaint(
   CefRefPtr<CefBrowser> browser,
   CefRenderHandler::PaintElementType type,
   const CefRenderHandler::RectList& dirtyRects,
@@ -64,6 +64,8 @@ void ::browser::handler::render::OnPaint(
   int height
 )
 {
+  typedef point_buffer::index_range range;
+
   for (auto r : dirtyRects)
   {
     LOG_TRACE(log, 
@@ -79,7 +81,7 @@ void ::browser::handler::render::OnPaint(
       ];
 
     // write the buffer into the region
-    const point& src = * (const point*) buffer;
+    const point * src = (const point*) buffer;
     int i = 0;
 
     for (point_buffer::index row = 0; row < r.height; row++)
@@ -92,6 +94,29 @@ void ::browser::handler::render::OnPaint(
   }
 }
 
+render::point_buffer
+render::GetArea(int x, int y, int width, int height) const
+{
+  typedef point_buffer::index_range range;
+
+  point_buffer::const_array_view<2>::type src =
+    buf[point_buffer::index_gen()
+      [range(y, y + height)]
+      [range(x, x + width)]
+    ];
+
+#if 0
+  for (point_buffer::index row = 0; row < r.height; row++)
+  {
+    for (point_buffer::index col = 0; col < r.width; col++)
+    {
+      dst[row][col] = src[i++];
+    }
+  }
+#endif
+
+  return src;
+}
 
 }}
 

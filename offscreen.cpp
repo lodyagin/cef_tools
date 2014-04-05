@@ -21,11 +21,6 @@
 #include "search.h"
 #include "screenshotter.h"
 
-// externally defined
-namespace screenshot {
-void take();
-}
-
 using namespace curr;
 
 //! The code used by a renderer process only

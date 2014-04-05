@@ -32,7 +32,7 @@ class render : public CefRenderHandler
 {
 public:
   struct alignas (4) point {
-    uint_8 red, green, blue, alpha;
+    uint8_t red, green, blue, alpha;
   };
 
   typedef boost::multi_array<point, 2> point_buffer;
@@ -68,6 +68,10 @@ public:
     int width, 
     int height
   ) override;
+
+  //! Return the rectangular part of buf
+  point_buffer GetArea
+    (int x, int y, int width, int height) const;
 
 protected:
   point_buffer buf;

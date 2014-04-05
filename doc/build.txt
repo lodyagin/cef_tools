@@ -1,0 +1,4 @@
+1. http://code.google.com/p/chromiumembedded/wiki/BranchesAndBuilding
+2. export CHROMIUM_SRC_DIR=.../chromium/src
+3. cmake -DCMAKE_BUILD_TYPE=Debug .
+4. export CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox

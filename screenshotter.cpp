@@ -14,12 +14,16 @@ using namespace curr;
 
 namespace screenshot {
 
-void take_delayed(int secs)
+void take(int browser_id)
 {
-  StdThread::create<LightThread>([secs]()
+}
+
+void take_delayed(int browser_id, int secs)
+{
+  StdThread::create<LightThread>([browser_id, secs]()
   {
     sleep(secs);
-    take();
+    take(browser_id);
   })->start();
 }
 
