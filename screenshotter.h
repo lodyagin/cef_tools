@@ -9,15 +9,27 @@
 #ifndef OFFSCREEN_SCREENSHOTTER_H
 #define OFFSCREEN_SCREENSHOTTER_H
 
+#include "include/cef_base.h"
+
 namespace screenshot {
 
-//! Take a screenshot.
-void take();
+//! Take a screenshot from browser_id of rect r into png
+//! with the path fname
+void take(
+  int browser_id, 
+  const CefRect& r, 
+  const std::string fname
+);
 
-//! Take the screenshot after secs seconds. Creates the
-//! thread for the remote take() call and returns
-//! immediately.
-void take_delayed(int secs);
+  //! Take the screenshot after secs seconds. Creates the
+  //! thread for the remote take() call and returns
+  //! immediately.
+  void take_delayed(
+    int browser_id, 
+    const CefRect& r, 
+    const std::string fname,
+    int secs
+  );
 
 }
 

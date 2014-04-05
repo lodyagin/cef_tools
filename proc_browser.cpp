@@ -39,8 +39,7 @@ void browser::OnContextInitialized()
 }
 
 render::render(int width_, int height_)
-  : width(width_), height(height_),
-    buf(boost::extents[height_][width_])
+  : width(width_), height(height_)
 {
   SCHECK(width > 10);
   SCHECK(height > 10);
@@ -60,11 +59,13 @@ void render::OnPaint(
   CefRenderHandler::PaintElementType type,
   const CefRenderHandler::RectList& dirtyRects,
   const void* buffer,
-  int width, 
-  int height
+  int w, 
+  int h
 )
 {
-  typedef point_buffer::index_range range;
+  auto* br = shared::browser_repository::instance()
+    . get_object_by_cefbrowser(browser.get());
+  assert(br);
 
   for (auto r : dirtyRects)
   {
@@ -73,49 +74,13 @@ void render::OnPaint(
           << r.width << ", " << r.height << ")"
     );
 
-    // select a rectangular write region
-    point_buffer::array_view<2>::type dst =
-      buf[point_buffer::index_gen()
-        [range(r.y, r.y + r.height)]
-        [range(r.x, r.x + r.width)]
-      ];
-
-    // write the buffer into the region
-    const point * src = (const point*) buffer;
-    int i = 0;
-
-    for (point_buffer::index row = 0; row < r.height; row++)
-    {
-      for (point_buffer::index col = 0; col < r.width; col++)
-      {
-        dst[row][col] = src[i++];
-      }
-    }
+    br->vbuf.on_paint(
+      r.x, r.y, r.width, r.height,
+      static_cast
+        <const shared::browser::videobuffer::point*>
+          (buffer)
+    );
   }
-}
-
-render::point_buffer
-render::GetArea(int x, int y, int width, int height) const
-{
-  typedef point_buffer::index_range range;
-
-  point_buffer::const_array_view<2>::type src =
-    buf[point_buffer::index_gen()
-      [range(y, y + height)]
-      [range(x, x + width)]
-    ];
-
-#if 0
-  for (point_buffer::index row = 0; row < r.height; row++)
-  {
-    for (point_buffer::index col = 0; col < r.width; col++)
-    {
-      dst[row][col] = src[i++];
-    }
-  }
-#endif
-
-  return src;
 }
 
 }}

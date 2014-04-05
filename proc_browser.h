@@ -9,7 +9,6 @@
 #ifndef OFFSCREEN_PROC_BROWSER_H
 #define OFFSCREEN_PROC_BROWSER_H
 
-#include <boost/multi_array.hpp>
 #include "include/cef_browser_process_handler.h"
 #include "include/cef_client.h"
 #include "include/cef_render_handler.h"
@@ -31,16 +30,13 @@ private:
 class render : public CefRenderHandler
 {
 public:
-  struct alignas (4) point {
-    uint8_t red, green, blue, alpha;
-  };
-
-  typedef boost::multi_array<point, 2> point_buffer;
-
   const int width;
   const int height;
 
-  render(int width_ = 2700, int height_ = 2700);
+  render(
+    int width_ = 2700, 
+    int height_ = 2700
+  );
 
   bool GetViewRect(
     CefRefPtr<CefBrowser> browser,
@@ -68,13 +64,6 @@ public:
     int width, 
     int height
   ) override;
-
-  //! Return the rectangular part of buf
-  point_buffer GetArea
-    (int x, int y, int width, int height) const;
-
-protected:
-  point_buffer buf;
 
 private:
   typedef curr::Logger<render> log;

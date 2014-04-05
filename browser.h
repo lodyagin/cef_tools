@@ -10,7 +10,10 @@
 
 #include <iostream>
 #include <string>
+#include <map>
 #include <assert.h>
+
+#include <boost/multi_array.hpp>
 
 #include "include/cef_browser.h"
 #include "include/cef_client.h"
@@ -22,6 +25,33 @@
 namespace shared {
 
 DECLARE_AXIS(BrowserAxis, curr::StateAxis);
+
+class videobuffer
+{
+public:
+  struct alignas (4) point {
+    uint8_t red, green, blue, alpha;
+  };
+
+  typedef boost::multi_array<point, 2> point_buffer;
+
+  videobuffer(int width, int height);
+
+  void on_paint(
+    int x, 
+    int y, 
+    int width, 
+    int height,
+    const point* buffer
+  );
+
+  //! Return the rectangular part of buf
+  point_buffer get_area
+    (int x, int y, int width, int height) const;
+
+protected:
+  point_buffer buf;
+};
 
 class browser 
   : public curr::RObjectWithEvents<BrowserAxis>
@@ -67,6 +97,7 @@ public:
   };
 
   const int id;
+  videobuffer vbuf;
 
   virtual ~browser();
 
@@ -95,8 +126,31 @@ protected:
 std::ostream& 
 operator<<(std::ostream& out, const browser& br);
 
+class browser_repository_impl
+  : public curr::Repository
+      <browser, browser::Par, std::map, int>
+{
+  using Parent = curr::Repository
+    <browser, browser::Par, std::map, int>;
+
+public:
+  browser* create_object(const browser::Par& p) override;
+
+  // Return the browser object by CefBrowser ptr
+  browser* get_object_by_cefbrowser(const CefBrowser* br) const
+  {
+    RLOCK(this->objectsM);
+    return cefindex.at(br);
+  }
+
+protected:
+  typedef std::map<const CefBrowser*, browser*> cefindex_t;
+  cefindex_t cefindex;
+};
+
 using browser_repository = 
   curr::AutoRepository<browser, int>;
+
 
 }
 
