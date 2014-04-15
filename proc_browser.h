@@ -13,6 +13,8 @@
 #include "include/cef_client.h"
 #include "include/cef_render_handler.h"
 #include "Logging.h"
+//#include "RHolder.h"
+#include "browser.h"
 
 //! The code used by a browser process only
 namespace browser {
@@ -33,10 +35,7 @@ public:
   const int width;
   const int height;
 
-  render(
-    int width_ = 2700, 
-    int height_ = 2700
-  );
+  render(int w, int h);
 
   bool GetViewRect(
     CefRefPtr<CefBrowser> browser,
@@ -73,10 +72,17 @@ private:
 class client : public CefClient
 {
 public:
+  const int width, height;
+
+  client(const shared::browser::Par& par)
+    : width(par.width), height(par.height)
+  {}
+
   CefRefPtr<CefRenderHandler> GetRenderHandler() override
   {
-    return new render;
+    return new render(width, height);
   }
+
 private:
   IMPLEMENT_REFCOUNTING(client);
 };

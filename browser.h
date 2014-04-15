@@ -21,6 +21,7 @@
 
 #include "AutoRepository.hpp"
 #include "REvent.h"
+#include "RMutex.h"
 
 namespace shared {
 
@@ -30,12 +31,14 @@ class videobuffer
 {
 public:
   struct alignas (4) point {
-    uint8_t red, green, blue, alpha;
+    uint8_t blue, green, red, alpha;
   };
 
   typedef boost::multi_array<point, 2> point_buffer;
 
-  videobuffer(int width, int height);
+  const int width, height;
+
+  videobuffer(int width_, int height_);
 
   void on_paint(
     int x, 
@@ -51,6 +54,10 @@ public:
 
 protected:
   point_buffer buf;
+  curr::RMutex mx = { "videobuffer::mx" };
+
+private:
+  typedef curr::Logger<videobuffer> log;
 };
 
 class browser 
@@ -78,6 +85,8 @@ public:
     std::string url;
     CefWindowInfo window_info;
     CefBrowserSettings settings;
+    int width = 2700;
+    int height = 2700;
 
     //! Create a new CefBrowser
     Par(const std::string& url_) : url(url_) {}
@@ -115,29 +124,53 @@ public:
     return curr::CompoundEvent();
   }
 
+  CefBrowser* get_cef_browser()
+  {
+    return br.get();
+  }
+
+  videobuffer& get_vbuf()
+  {
+    return vbuf;
+  }
+
+  void get_dims(int& width, int& height) const
+  {
+    width = vbuf.width;
+    height = vbuf.height;
+  }
+
   const std::string url;
   const CefRefPtr<CefBrowser> br;
 
 protected:
   browser(const curr::ObjectCreationInfo& oi, 
           const Par& par);
+
+private:
+  typedef curr::Logger<browser> log;
 };
 
 std::ostream& 
 operator<<(std::ostream& out, const browser& br);
 
-class browser_repository_impl
-  : public curr::Repository
+#if 0
+class browser_repository final
+  : public curr::SAutoSingleton<browser_repository>,
+    public curr::Repository
       <browser, browser::Par, std::map, int>
 {
   using Parent = curr::Repository
     <browser, browser::Par, std::map, int>;
 
 public:
+  browser_repository();
+
   browser* create_object(const browser::Par& p) override;
 
   // Return the browser object by CefBrowser ptr
-  browser* get_object_by_cefbrowser(const CefBrowser* br) const
+  browser* get_object_by_cefbrowser
+    (const CefBrowser* br) const
   {
     RLOCK(this->objectsM);
     return cefindex.at(br);
@@ -146,11 +179,14 @@ public:
 protected:
   typedef std::map<const CefBrowser*, browser*> cefindex_t;
   cefindex_t cefindex;
+
+private:
+  typedef curr::Logger<browser_repository> log;
 };
-
-using browser_repository = 
+#else
+using browser_repository =
   curr::AutoRepository<browser, int>;
-
+#endif
 
 }
 

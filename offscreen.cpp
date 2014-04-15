@@ -110,7 +110,12 @@ int main(int argc, char* argv[])
 
   CefSettings settings;
   CefInitialize(main_args, settings, app.get(), nullptr);
-  screenshot::take_delayed(20);
+  screenshot::take_delayed(
+    1, 
+    CefRect(0, 0, 2700, 2700), 
+    "test.png", 
+    8
+  );
   CefRunMessageLoop();
   CefShutdown();
 }

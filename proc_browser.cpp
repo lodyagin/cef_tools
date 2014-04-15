@@ -6,6 +6,7 @@
  * @author Sergei Lodyagin
  */
 
+//#include "RHolder.hpp"
 #include "proc_browser.h"
 #include "browser.h"
 #include "task.h"
@@ -38,11 +39,12 @@ void browser::OnContextInitialized()
   shared::browser_repository::instance().create_object(par);
 }
 
-render::render(int width_, int height_)
-  : width(width_), height(height_)
+render::render(int w, int h)
+  : width(w), height(h)
 {
-  SCHECK(width > 10);
-  SCHECK(height > 10);
+  LOG_TRACE(log, "render::render");
+  SCHECK(w > 10);
+  SCHECK(h > 10);
 }
 
 bool render::GetViewRect(
@@ -50,6 +52,7 @@ bool render::GetViewRect(
   CefRect& rect
 )
 {
+  LOG_TRACE(log, "render::GetViewRect");
   rect.Set(0, 0, width, height);
   return true;
 }
@@ -63,23 +66,29 @@ void render::OnPaint(
   int h
 )
 {
-  auto* br = shared::browser_repository::instance()
-    . get_object_by_cefbrowser(browser.get());
-  assert(br);
+#if 1
+  shared::browser* br = nullptr;
+  try {
+    br = shared::browser_repository::instance()
+      . get_object_by_id(browser->GetIdentifier());
+  }
+  catch(const std::out_of_range&) {}
+#else
+  RHolder<shared::browser> br(browser->GetIdentifier());
+#endif
 
   for (auto r : dirtyRects)
   {
-    LOG_TRACE(log, 
-      "render::OnPaint(" << r.x << ", " << r.y << ", " 
-          << r.width << ", " << r.height << ")"
-    );
+      LOG_TRACE(log, 
+        "render::OnPaint(" << r.x << ", " << r.y << ", " 
+            << r.width << ", " << r.height << ")"
+      );
 
-    br->vbuf.on_paint(
-      r.x, r.y, r.width, r.height,
-      static_cast
-        <const shared::browser::videobuffer::point*>
-          (buffer)
-    );
+      br -> get_vbuf().on_paint(
+        r.x, r.y, r.width, r.height,
+        static_cast
+          <const shared::videobuffer::point*>(buffer)
+      );
   }
 }
 

@@ -45,5 +45,6 @@ target_link_libraries(offscreen ${CEF_LIBRARIES})
 target_link_libraries(offscreen concurrent)
 target_link_libraries(offscreen ${Boost_SYSTEM_LIBRARY})
 target_link_libraries(offscreen log4cxx pthread)
+target_link_libraries(offscreen png)
 
 
