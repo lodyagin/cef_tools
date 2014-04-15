@@ -114,7 +114,7 @@ int main(int argc, char* argv[])
     1, 
     CefRect(0, 0, 2700, 2700), 
     "test.png", 
-    8
+    28
   );
   CefRunMessageLoop();
   CefShutdown();

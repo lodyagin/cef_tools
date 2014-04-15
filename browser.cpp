@@ -5,7 +5,7 @@
  * @author Sergei Lodyagin
  */
 
-#define IMG
+//#define IMG
 
 #ifdef IMG
 #  include "screenshotter.h"
@@ -93,26 +93,6 @@ operator<<(std::ostream& out, const browser& br)
   return out;
 }
 
-#if 0
-browser_repository::browser_repository()
-  : Parent(type<browser_repository>::name(), 0)
-{
-  this->complete_construction();
-}
-
-browser* browser_repository
-::create_object(const browser::Par& p)
-{
-  RLOCK(this->objectsM);
-  browser* res = Parent::create_object(p);
-  assert(res);
-  LOG_DEBUG(log, "browser_repository::create_browser for ("
-    << res->br.get() << ')');
-  return cefindex[res->br.get()] = res;
-  
-}
-#endif
-
 videobuffer::videobuffer(int width_, int height_)
   : width(width_), height(height_),
     buf(boost::extents[height][width])
@@ -129,8 +109,6 @@ void videobuffer::on_paint(
   const point* buffer
 )
 {
-  static int img_cnt = 1;
-
   typedef point_buffer::index_range range;
   typedef boost::const_multi_array_ref<point, 2> 
     source_buf;
@@ -159,38 +137,18 @@ void videobuffer::on_paint(
 
   {
     RLOCK(mx);
-#if 0
     dst = src;
-#else
-  // write the buffer into the region
-//  int i = 0;
-
-#if 0
-  for (point_buffer::index row = 0; row < height; row++)
-  {
-    for (point_buffer::index col = 0; col < width; col++)
-    {
-      buf[row][col] = src_buf[row][col];
-    }
-  }
-#else
-  for (point_buffer::index row = 0; row < h; row++)
-  {
-    for (point_buffer::index col = 0; col < w; col++)
-    {
-      dst[row][col] = src[row][col];
-    }
-  }
-#endif
-#endif
 #ifdef IMG
-  ::operator<<(img, (videobuffer::point_buffer) dst);
+    ::operator<<(img, (videobuffer::point_buffer) dst);
   }
+  static int img_cnt = 1;
   const std::string fname = SFORMAT(
     "test" << img_cnt++ << ".png"
   );
   LOG_DEBUG(log, fname);
   img.write(fname);
+#else
+  }
 #endif
 }
 
