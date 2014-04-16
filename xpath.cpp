@@ -6,6 +6,7 @@
  * @author Sergei Lodyagin
  */
 
+#include <iterator>
 #include <assert.h>
 #include <algorithm>
 #include <cctype>
@@ -15,12 +16,10 @@
 
 xpath::select::select(
   const std::string& tag_,
-  const CefRefPtr<CefDOMNode>& dom_,
-  int d
+  const CefRefPtr<CefDOMNode>& dom_
 ) 
-  : tag(tag_), dom(dom_), depth(d)
+  : tag(tag_), context_node(dom_)
 {
-  SCHECK(dom.get());
   std::transform(
     tag.begin(), tag.end(), tag.begin(), ::tolower
   );
@@ -64,28 +63,19 @@ operator<< (std::ostream& out, CefRefPtr<CefDOMNode> dom)
 std::ostream&
 operator<< (std::ostream& out, const xpath::select& sel)
 {
-  SCHECK(sel.dom.get());
-  if (!sel.dom->IsElement())
-    return out;
-
-  std::string tag_name = 
-    sel.dom->GetElementTagName().ToString();
-  std::transform(
-    tag_name.begin(), tag_name.end(), tag_name.begin(),
-    ::tolower
+  auto descendants = sel.context_node.descendant();
+  std::copy_if(
+    descendants.begin(),
+    descendants.end(),
+    std::ostream_iterator<CefRefPtr<CefDOMNode>>(
+      out,
+      "\n"
+    ),
+    [](const xpath::node& node)
+    {
+      return node.tag_name() == sel.tag;
+    }
   );
-
-  if (tag_name == sel.tag)
-    out << sel.dom << '\n';
-
-  // recursion into childs
-  for(auto node = sel.dom->GetFirstChild();
-      node.get() != nullptr;
-      node = node->GetNextSibling())
-  {
-    // TODO copy std::string - optimize it
-    out << xpath::select(sel.tag, node, sel.depth + 1);
-  }
   return out;
 }
 

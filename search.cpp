@@ -23,7 +23,6 @@ void flash::Execute()
   {
     void Visit(CefRefPtr<CefDOMDocument> d) override
     {
-      std::cout << "here: " << d->GetBaseURL() << std::endl;
       LOG_DEBUG(log, 
         xpath::select("object", d->GetBody())
       );
