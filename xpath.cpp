@@ -65,13 +65,13 @@ operator<< (std::ostream& out, const xpath::select& sel)
 {
   auto descendants = sel.context_node.descendant();
   std::copy_if(
-    descendants.begin(),
-    descendants.end(),
+    descendants->begin(),
+    descendants->end(),
     std::ostream_iterator<CefRefPtr<CefDOMNode>>(
       out,
       "\n"
     ),
-    [](const xpath::node& node)
+    [&sel](const xpath::node& node)
     {
       return node.tag_name() == sel.tag;
     }

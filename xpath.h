@@ -9,7 +9,7 @@
 #ifndef OFFSCREEN_XPATH_H
 #define OFFSCREEN_XPATH_H
 
-//#include <iostream>
+#include <iostream>
 #include <iterator>
 #include <algorithm>
 #include <cctype>
@@ -19,8 +19,6 @@
 
 namespace xpath 
 {
-
-class node;
 
 //! xpath axes
 enum class axis {
@@ -61,25 +59,127 @@ public:
 //! The end iterator marker for constructor
 struct end_t {};
 
+class iterator_base;
+
+template<xpath::axis axis> class iterator;
+
+}
+
+//! The context node for all expressions
+class node
+{
+  friend class node_iterators::iterator_base;
+
+public:
+  template<xpath::axis axis>
+  using iterator = node_iterators::iterator<axis>;
+
+  node(node_iterators::wrap dom_, int depth_ = -1) 
+    : dom(dom_), depth(depth_), empty(false)
+  {
+    SCHECK(dom);
+    assert((dom.get() == nullptr) == empty);
+  }
+
+  node(CefRefPtr<CefDOMNode> dom_, int depth_ = -1) 
+    : node(node_iterators::wrap(dom_), depth_)
+  {}
+#if 1
+#else
+    : dom(dom_), depth(depth_), empty(false)
+  {
+    SCHECK(dom);
+    assert((dom.get() == nullptr) == empty);
+  }
+#endif
+
+  template<xpath::axis ax>
+  class axis;
+
+  std::shared_ptr<axis<xpath::axis::self>> self() const;
+
+  std::shared_ptr<axis<xpath::axis::child>> child() const;
+
+  std::shared_ptr<axis<xpath::axis::descendant>> 
+  descendant() const;
+
+  std::string tag_name() const
+  {
+    if (!dom->IsElement())
+      return std::string();
+
+    std::string res = dom->GetElementTagName().ToString();
+    std::transform(
+      res.begin(), 
+      res.end(), 
+      res.begin(),
+      ::tolower
+    );
+    return res;
+  }
+
+  node_iterators::wrap operator->() 
+  { 
+    return dom; 
+  }
+
+  const node_iterators::wrap operator->() const 
+  { 
+    return dom; 
+  }
+
+  operator node_iterators::wrap()
+  {
+    return dom;
+  }
+
+  operator const node_iterators::wrap() const
+  {
+    return dom;
+  }
+
+/*  bool operator==(const node& o)
+  {
+    return o.dom == o
+*/
+
+protected:
+  //! It is protected 
+  //! thus it's impossible declare "no node"
+  node() noexcept : dom(nullptr) {}
+
+  node_iterators::wrap dom;
+
+  //! depth to context_node if it is a result of xpath
+  //! expression or -1
+  int depth = -1;
+
+  //! true if dom is not initialized
+  bool empty = true;
+};
+
+namespace node_iterators {
+
 class iterator_base
 {
 public:
   using difference_type = ptrdiff_t;
   using size_type = size_t;
-  using value_type = xpath::node; //CefDOMNode;
-  using pointer = wrap;
-  using const_pointer = const wrap;
+  using value_type = xpath::node;
+  using pointer = xpath::node;
+  using const_pointer = const xpath::node;
   using reference = xpath::node;
   using const_reference = const xpath::node;
   using iterator_category = std::input_iterator_tag;
 
-  //! Two iterators are equal if points to the same node
-  //! as CefDOMNode::IsSame returns or is_empty() is true
-  //! for both. NB Iterators can be equal
-  //! even if two iterators have different context nodes.
+  //! Two iterators are equal if both are empty or points
+  //! to the same node
+  //! as CefDOMNode::IsSame returns.. NB Iterators can be
+  //! equal even if two iterators have different context
+  //! nodes.
   bool operator==(const iterator_base& o) const noexcept
   {
-    return (is_empty() && o.is_empty())
+    return (empty && o.empty)
       || (end_ovf == o.end_ovf 
           && current->IsSame(o.current));
   }
@@ -91,93 +191,73 @@ public:
 
   reference operator* ()
   {
-    assert(is_valid());
-    SCHECK(!is_empty());
+    SCHECK(!empty);
     SCHECK(end_ovf == 0);
     return current;
   }
 
   const_reference operator* () const
   {
-    assert(is_valid());
-    SCHECK(!is_empty());
+    SCHECK(!empty);
     SCHECK(end_ovf == 0);
     return current;
   }
 
-  value_type* operator->()
+  reference operator->()
   {
-    assert(is_valid());
-    SCHECK(!is_empty());
+    SCHECK(!empty);
     SCHECK(end_ovf == 0);
-    return current.get();
+    return current;
   }
 
-  const value_type* operator->() const
+  const_reference operator->() const
   {
-    assert(is_valid());
-    SCHECK(!is_empty());
+    SCHECK(!empty);
     SCHECK(end_ovf == 0);
-    return current.get();
+    return current;
   }
 
   operator pointer() 
   {
-    assert(is_valid());
+    //SCHECK(!empty);
     SCHECK(end_ovf == 0);
     return current;
   }
 
-  operator const pointer() const
+  operator const_pointer() const
   {
-    assert(is_valid());
+    //SCHECK(!empty); 
     SCHECK(end_ovf == 0);
     return current;
   }
 
 protected:
-  // Making this class "technical" only
+  // Protecting ctrs makes this class "technical" only
+  iterator_base() noexcept {}
+
   iterator_base(
-    wrap context_node,
-    wrap current_node,
+    node context_node,
+    node current_node,
     size_type after_end = 0
   ) noexcept
     : context(context_node), 
       current(current_node),
       end_ovf(after_end)
-  {
-    assert(is_valid());
-  }
+  {}
 
-  //! It is true only for not
-  //! initialized by a value
-  bool is_empty() const noexcept
-  { 
-    assert(is_valid());
-    return (bool) context;
-  }
-  
   // the context node is not used by some iterators (e.g.,
   // for a child axis) but keep all possible fields in the
   // base class for not making virtual desctuctor.
-  wrap context;
+  node context;
 
-  wrap current;
+  node current;
 
   // The end()+end_ovf iterator points to the same current
   // as end()-1.
   size_type end_ovf = 0;
 
-  // for asserts only
-  bool is_valid() const noexcept
-  {
-#if 1
-    return (bool) context == (bool) current;
-#else
-    // null context -> null current
-    return curr::implication(context, current);
-#endif
-  }
+  //! true if context and current are not initialized
+  bool empty = true;
 };
 
 template<xpath::axis axis>
@@ -193,13 +273,10 @@ class iterator<axis::self> : public iterator_base
   friend class iterator<axis::descendant>;
 
 public:
-  iterator() noexcept
-    : iterator_base(nullptr, nullptr)
-  {}
+  iterator() noexcept {}
 
   iterator& operator++() noexcept
   {
-    assert(is_valid());
     ++end_ovf;
     assert(end_ovf);
     return *this;
@@ -213,18 +290,13 @@ public:
   }
 
 protected:
-  explicit iterator(wrap context_node) 
-    noexcept
+  explicit iterator(node context_node) noexcept
     : iterator_base(context_node, context_node)
-  {
-    assert(context_node.get());
-  }
+  {}
 
-  iterator(wrap context_node, end_t) noexcept
+  iterator(node context_node, end_t) noexcept
     : iterator_base(context_node, context_node, +1)
-  {
-    assert(context_node.get());
-  }
+  {}
 };
 
 // an xpath child axis
@@ -235,18 +307,10 @@ class iterator<axis::child> : public iterator_base
   friend class iterator<axis::descendant>;
 
 public:
-  iterator() noexcept
-    : iterator_base(nullptr, nullptr)
-  {}
+  iterator() noexcept {}
 
   iterator& operator++() noexcept
   {
-    assert(is_valid());
-    if (is_empty()) {
-      ++end_ovf;
-      return *this;
-    }
-
     // NB not forward after the end()
     if (const wrap next = current->GetNextSibling())
       current = next;
@@ -254,7 +318,7 @@ public:
       ++end_ovf;
       assert(end_ovf);
     }
-    assert(current->GetParent() == context);
+    assert(current->GetParent()->IsSame(context));
     return *this;
   }
 
@@ -266,28 +330,26 @@ public:
   }
 
 protected:
-  explicit iterator(wrap context_node) 
+  explicit iterator(node context_node) 
     noexcept
     : iterator_base(
         context_node, 
         context_node->GetFirstChild().get() 
-          ? context_node->GetFirstChild() : context_node,
+          ? node(context_node->GetFirstChild()) 
+          : context_node,
         context_node->GetFirstChild().get() == nullptr
       )
-  {
-    assert(context_node.get());
-  }
+  {}
 
-  iterator(wrap context_node, end_t) noexcept
+  iterator(node context_node, end_t) noexcept
     : iterator_base(
         context_node, 
         context_node->GetLastChild().get() 
-          ? context_node->GetLastChild() : context_node,
+          ? node(context_node->GetLastChild()) 
+          : context_node,
         +1
       )
-  {
-    assert(context_node.get());
-  }
+  {}
 };
 
 // an xpath descendant axis
@@ -297,19 +359,10 @@ class iterator<axis::descendant> : public iterator_base
   friend class xpath::node;
 
 public:
-  iterator() noexcept
-    : iterator_base(nullptr, nullptr)
-  {}
+  iterator() noexcept {}
 
   iterator& operator++() noexcept
   {
-    assert(is_valid());
-
-    if (is_empty()) {
-      ++end_ovf;
-      return *this;
-    }
-
     // go to the child first
     if (const wrap child = current->GetFirstChild())
     {
@@ -327,10 +380,8 @@ public:
     // now try the parent's next sibling
     if (*this != iterator<axis::self>(context)) {
       const wrap parent = current->GetParent();
-      assert(parent);
-      if (const auto parent_sibling = 
-          parent->GetNextSibling()
-          )
+      if (const wrap parent_sibling = 
+          parent->GetNextSibling())
       {
         current = parent_sibling;
         return *this;
@@ -351,26 +402,23 @@ public:
   }
 
 protected:
-  explicit iterator(wrap context_node) noexcept
+  explicit iterator(node context_node) noexcept
     : iterator_base(
         context_node, 
         context_node->GetFirstChild().get() 
-          ? context_node->GetFirstChild() : context_node,
+          ? node(context_node->GetFirstChild())
+          : context_node,
         context_node->GetFirstChild().get() == nullptr
       )
-  {
-    assert(context_node.get());
-  }
+  {}
 
-  iterator(wrap context_node, end_t) noexcept
+  iterator(node context_node, end_t) noexcept
     : iterator_base(
         context_node, 
         (pointer) iterator(context_node).axis_last(),
         +1
       )
-  {
-    assert(context_node.get());
-  }
+  {}
 
   //! get the last element of the iterator axis
   iterator axis_last()
@@ -387,83 +435,6 @@ protected:
 
 }
 
-//! The context node for all expressions
-class node : public wrap
-{
-public:
-  template<xpath::axis axis>
-  using iterator = node_iterators::iterator<axis>;
-
-#if 0
-  node(wrap dom_) : dom(dom_) 
-  {
-    SCHECK(dom.get());
-  }
-#else
-  using wrap::wrap;
-#endif
-
-  template<xpath::axis ax>
-  class axis
-  {
-  public:
-    using iterator = node::iterator<ax>;
-
-    explicit axis(node dom_)
-      : dom(dom_)
-    {}
-
-    iterator begin()
-    {
-      return iterator(dom);
-    }
-
-    iterator end()
-    {
-      return iterator(
-        dom, 
-        node_iterators::end_t()
-      );
-    }
-
-  protected:
-    node dom;
-  };
-
-  axis<xpath::axis::self> self() const
-  {
-    return axis<xpath::axis::self>(dom);
-  }
-
-  axis<xpath::axis::child> child() const
-  {
-    return axis<xpath::axis::child>(dom);
-  }
-
-  axis<xpath::axis::descendant> descendant() const
-  {
-    return axis<xpath::axis::descendant>(dom);
-  }
-
-  std::string tag_name() const
-  {
-    if (!dom->IsElement())
-      return std::string();
-
-    std::string res = dom->GetElementTagName().ToString();
-    std::transform(
-      res.begin(), 
-      res.end(), 
-      res.begin(),
-      ::tolower
-    );
-    return res;
-  }
-
-//protected:
-//  CefRefPtr<CefDOMNode> dom;
-};
-
 struct select
 {
   select(
@@ -474,6 +445,51 @@ struct select
   std::string tag;
   node context_node;
 };
+
+// the implementation
+
+template<xpath::axis ax>
+class node::axis
+{
+public:
+  using iterator = node::iterator<ax>;
+
+  explicit axis(node dom_)
+    : dom(dom_)
+  {}
+
+  iterator begin()
+  {
+    return iterator(dom);
+  }
+
+  iterator end()
+  {
+    return iterator(
+      dom, 
+      node_iterators::end_t()
+      );
+  }
+
+protected:
+  node dom;
+};
+
+inline std::shared_ptr<node::axis<axis::self>> node::self() const
+{
+  return std::make_shared<axis<xpath::axis::self>>(dom);
+}
+
+inline std::shared_ptr<node::axis<axis::child>> node::child() const
+{
+  return std::make_shared<axis<xpath::axis::child>>(dom);
+}
+
+inline std::shared_ptr<node::axis<axis::descendant>> 
+node::descendant() const
+{
+  return std::make_shared<axis<xpath::axis::descendant>>(dom);
+}
 
 }
 
