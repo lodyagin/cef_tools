@@ -76,34 +76,68 @@ template<xpath::axis axis> class iterator;
 class node
 {
   friend class node_iterators::iterator_base;
+  friend class node_iterators::iterator<axis::attribute>;
+
+  friend std::ostream&
+  operator<< (std::ostream& out, const node& nd);
+
+  constexpr static auto attr_names =
+   std::array<const char*, 9> 
+  {
+    "class"
+    "id",
+    "width",
+    "height",
+    "type",
+    "data",
+    "xmlns",
+    "lang"
+    "xml:lang"
+  };
 
 public:
+  enum class type { not_initialized, dom, attribute };
+
   template<xpath::axis axis>
   using iterator = node_iterators::iterator<axis>;
 
-  node(node_iterators::wrap dom_, int depth_ = -1) 
-    : dom(dom_), depth(depth_), empty(false)
+  node(node_iterators::wrap dom_) 
+    : dom(dom_), the_type(type::dom)
   {
     SCHECK(dom);
-    assert((dom.get() == nullptr) == empty);
+    assert((dom.get() == nullptr) == 
+      (the_type == type::not_initialized));
   }
 
-  node(CefRefPtr<CefDOMNode> dom_, int depth_ = -1) 
-    : node(node_iterators::wrap(dom_), depth_)
+  node(CefRefPtr<CefDOMNode> dom_) 
+    : node(node_iterators::wrap(dom_))
   {}
 
+  node(node_iterators::wrap dom_, int attr) 
+    : dom(dom_), the_type(type::attribute), attr_idx(attr)
+  {
+    SCHECK(dom);
+    assert((dom.get() == nullptr) == 
+      (the_type == type::not_initialized));
+  }
+
   template<xpath::axis ax>
-  class axis;
+  class axis_;
 
-  std::shared_ptr<axis<xpath::axis::self>> self() const;
+  std::shared_ptr<axis_<xpath::axis::self>> self() const;
 
-  std::shared_ptr<axis<xpath::axis::child>> child() const;
+  std::shared_ptr<axis_<xpath::axis::child>> child() const;
 
-  std::shared_ptr<axis<xpath::axis::descendant>> 
+  std::shared_ptr<axis_<xpath::axis::descendant>> 
   descendant() const;
+
+  std::shared_ptr<axis_<xpath::axis::attribute>> 
+  attribute() const;
 
   std::string tag_name() const
   {
+    SCHECK(the_type != type::attribute);
+
     if (!dom->IsElement())
       return std::string();
 
@@ -118,6 +152,16 @@ public:
   }
 
 #if 0
+  int n_attrs() const
+  {
+    if (!dom->HasElementAttributes())
+      return 0;
+
+    CefDOMNode::AttributeMap attrs;
+    dom->GetElementAttributes(attrs);
+    return attrs.size();
+  }
+
   bool operator==(CefRefPtr<CefDOMNode> o) const
   {
     return (empty && o.get() == nullptr)
@@ -132,28 +176,27 @@ public:
 
   node_iterators::wrap operator->() 
   { 
+    SCHECK(the_type == type::dom);
     return dom; 
   }
 
   const node_iterators::wrap operator->() const 
   { 
+    SCHECK(the_type == type::dom);
     return dom; 
   }
 
   operator node_iterators::wrap()
   {
+    SCHECK(the_type != type::not_initialized);
     return dom;
   }
 
   operator const node_iterators::wrap() const
   {
+    SCHECK(the_type != type::not_initialized);
     return dom;
   }
-
-/*  bool operator==(const node& o)
-  {
-    return o.dom == o
-*/
 
 protected:
   //! It is protected 
@@ -164,10 +207,12 @@ protected:
 
   //! depth to context_node if it is a result of xpath
   //! expression or -1
-  int depth = -1;
+  //int depth = -1;
 
-  //! true if dom is not initialized
-  bool empty = true;
+  type the_type = type::not_initialized;
+
+  //! the attribute sequence number
+  int attr_idx = 0;
 };
 
 using self_iterator = node::iterator<axis::self>;
@@ -208,6 +253,7 @@ public:
 
   reference operator* ()
   {
+    //todo switch node type, check attr range
     SCHECK(!empty);
     SCHECK(ovf == 0);
     return current;
@@ -262,6 +308,13 @@ protected:
     : context(context_node), 
       current(current_node),
       ovf(overflow),
+      empty(false)
+  {}
+
+  // attribute
+  iterator_base(node context_node, int attr_idx)
+    : context(context_node), 
+      current(context_node, attr_idx),
       empty(false)
   {}
 
@@ -545,6 +598,58 @@ protected:
 #endif
 };
 
+// an xpath attribute axis
+template<>
+class iterator<axis::attribute> : public iterator_base
+{
+  friend class xpath::node;
+
+public:
+  iterator() noexcept {}
+
+  iterator& operator++() noexcept
+  {
+    // while
+    ++(current.attr_idx);
+    std::cout << "attr_idx=" << current.attr_idx 
+      << std::endl;
+    return *this;
+  }
+
+  iterator operator++(int) noexcept
+  {
+    iterator copy(*this);
+    ++(*this);
+    return copy;
+  }
+
+  iterator& operator--() noexcept
+  {
+    --(current.attr_idx);
+    std::cout << "attr_idx=" << current.attr_idx 
+      << std::endl;
+    return *this;
+  }
+
+  iterator operator--(int) noexcept
+  {
+    iterator copy(*this);
+    --(*this);
+    return copy;
+  }
+
+protected:
+  explicit iterator(node context_node) noexcept
+    : iterator_base(context_node, 0)
+  {}
+
+  iterator(node context_node, end_t) noexcept
+    : iterator_base(context_node, context_node.attr_names.size())
+  {}
+
+  static_assert(node::attr_names.size() == 9, "FAIL");
+};
+
 }
 
 struct select
@@ -561,12 +666,12 @@ struct select
 // the implementation
 
 template<xpath::axis ax>
-class node::axis
+class node::axis_
 {
 public:
   using iterator = node::iterator<ax>;
 
-  explicit axis(node dom_)
+  explicit axis_(node dom_)
     : dom(dom_)
   {}
 
@@ -587,20 +692,26 @@ protected:
   node dom;
 };
 
-inline std::shared_ptr<node::axis<axis::self>> node::self() const
+inline std::shared_ptr<node::axis_<axis::self>> node::self() const
 {
-  return std::make_shared<axis<xpath::axis::self>>(dom);
+  return std::make_shared<axis_<xpath::axis::self>>(dom);
 }
 
-inline std::shared_ptr<node::axis<axis::child>> node::child() const
+inline std::shared_ptr<node::axis_<axis::child>> node::child() const
 {
-  return std::make_shared<axis<xpath::axis::child>>(dom);
+  return std::make_shared<axis_<xpath::axis::child>>(dom);
 }
 
-inline std::shared_ptr<node::axis<axis::descendant>> 
+inline std::shared_ptr<node::axis_<axis::descendant>> 
 node::descendant() const
 {
-  return std::make_shared<axis<xpath::axis::descendant>>(dom);
+  return std::make_shared<axis_<xpath::axis::descendant>>(dom);
+}
+
+inline std::shared_ptr<node::axis_<axis::attribute>> 
+node::attribute() const
+{
+  return std::make_shared<axis_<xpath::axis::attribute>>(dom);
 }
 
 }
@@ -613,9 +724,24 @@ operator<< (std::ostream& out, CefRefPtr<CefDOMNode> dom);
 namespace xpath {
 
 inline std::ostream&
-operator<< (std::ostream& out, const node& dom)
+operator<< (std::ostream& out, const node& nd)
 {
-  return out << (CefRefPtr<CefDOMNode>) dom;
+  switch(nd.the_type)
+  {
+    case node::type::dom:
+      return out << (CefRefPtr<CefDOMNode>) nd.dom;
+    case node::type::attribute:
+      {
+        const CefString name = nd.attr_names.at(nd.attr_idx);
+        return out << '[' << name.ToString() << '=' 
+          << nd.dom->GetElementAttribute(name).ToString() 
+          << ']';
+      }
+    case node::type::not_initialized:
+      return out << "(node not initialized)";
+    default:
+      THROW_NOT_IMPLEMENTED;
+  }
 }
 
 //! prints matched tags

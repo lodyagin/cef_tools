@@ -150,11 +150,11 @@ TEST(Xpath, DescendantAxis) {
 
 #if 0
     // out only tags
-    std::copy_if(
+    std::copy(
       begin, 
       end, 
-      std::ostream_iterator<node>(std::cout, "\n"),
-      [](const node& n) { return n->IsElement(); }
+      std::ostream_iterator<node>(std::cout, "\n")
+//      [](const node& n) { return n->IsElement(); }
     );
 #endif
 
@@ -166,7 +166,7 @@ TEST(Xpath, DescendantAxis) {
     EXPECT_EQ(n_tags, 67);
 
     {
-      ++begin; // at <!DOCTUPE ...>
+      ++begin; // at <!-- ...>
       const int n_tags2 = std::count_if(
         begin->descendant()->begin(),
         begin->descendant()->end(),
@@ -207,6 +207,37 @@ TEST(Xpath, DescendantAxis) {
     );
     EXPECT_EQ(n_tags3, 12);
     }
+  });
+}
+
+TEST(Xpath, AttributeAxis) {
+  test_dom([](node root)
+  {
+    auto i = root.descendant()->begin();
+    ++i; ++i; 
+    EXPECT_EQ(i->tag_name(), "html");
+    {
+      const int n_attrs = std::count_if(
+        i->attribute()->begin(), 
+        i->attribute()->end(), 
+        [](const node&){ return true; }
+      );
+      EXPECT_EQ(n_attrs, 3);
+    }
+    std::cout << *(i->attribute()->begin()) << std::endl;
+    std::cout << *--(i->attribute()->end()) << std::endl;
+#if 1
+    std::copy(
+      i->attribute()->begin(), 
+      i->attribute()->end(), 
+      std::ostream_iterator<node>(std::cout, "; ")
+    );
+    std::cout << std::endl;
+#endif
+
+    ++i;
+    EXPECT_EQ(i->tag_name(), "head");
+    //EXPECT_EQ(i->n_attrs(), 0);
   });
 }
 

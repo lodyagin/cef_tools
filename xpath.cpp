@@ -14,6 +14,9 @@
 #include "string_utils.h"
 #include "xpath.h"
 
+constexpr std::array<const char*, 9> 
+  xpath::node::attr_names;
+
 xpath::select::select(
   const std::string& tag_,
   const CefRefPtr<CefDOMNode>& dom_
