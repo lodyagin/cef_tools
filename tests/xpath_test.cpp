@@ -1,6 +1,7 @@
 #include <string.h>
 #include <atomic>
 #include "include/cef_command_line.h"
+#include "include/cef_task.h"
 #include "Logging.h"
 #include "Event.h"
 #include "xpath.h"
@@ -18,6 +19,20 @@ TEST(XpathBasic, Wrap) {
   // TODO EXPECT_FALSE
 }
 
+std::atomic<int> test_result(13);
+
+class test_runner : public CefTask
+{
+public:
+  void Execute() override
+  {
+    test_result = RUN_ALL_TESTS();
+  }
+
+private:
+  IMPLEMENT_REFCOUNTING();
+};
+
 int main(int argc, char* argv[])
 {
   testing::InitGoogleTest(&argc, argv);
@@ -28,12 +43,10 @@ int main(int argc, char* argv[])
     argv2[argc2] = argv[argc2];
   SCHECK(argv2[argc2++] = strdup("--off-screen"));
 
-  std::atomic<int> test_result(13);
-
   offscreen(
     argc2, 
     argv2,
-    [&test_result]()
+    []()
     {
       CURR_WAIT_L(
         Logger<LOG::Root>::logger(),
@@ -43,7 +56,7 @@ int main(int argc, char* argv[])
         60001
       );
 
-      test_result = RUN_ALL_TESTS();
+      CefPostTask(TID_RENDERER, new test_runner);
     }
   );
   return test_result;
