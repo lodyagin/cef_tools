@@ -1,3 +1,5 @@
+#include <iostream>
+#include <iterator>
 #include <string.h>
 #include <atomic>
 #include <functional>
@@ -57,21 +59,70 @@ TEST(XpathBasic, Wrap) {
 TEST(Xpath, SelfAxis) {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
-    
     node root(r);
     self_iterator begin = root.self()->begin();
     self_iterator end = root.self()->end();
     
+    EXPECT_EQ(begin, begin);
+    EXPECT_EQ(end, end);
     EXPECT_NE(begin, end);
     self_iterator it = begin;
     ++it;
     EXPECT_NE(it, begin);
     EXPECT_EQ(it, end);
     EXPECT_NE(begin, end);
-    ++it;
+    self_iterator it2 = it++;
+    EXPECT_NE(it2, begin);
+    EXPECT_EQ(it2, end);
     EXPECT_NE(it, begin);
     EXPECT_NE(it, end);
     EXPECT_NE(begin, end);
+  });
+}
+
+TEST(Xpath, ChildAxis) {
+  test_dom([](CefRefPtr<CefDOMNode> r)
+  {
+    node root(r);
+    child_iterator begin = root.child()->begin();
+    child_iterator end = root.child()->end();
+    EXPECT_EQ(begin, begin);
+    EXPECT_EQ(end, end);
+    EXPECT_NE(begin, end);
+
+    child_iterator it = begin;
+    ++it; ++it;
+    begin = (*it).child()->begin();
+    end = (*it).child()->end();
+    
+    EXPECT_EQ((*begin).tag_name(), "head");
+    for (child_iterator it2 = begin; it2 != end; ++it2)
+      it = it2;
+    EXPECT_EQ((*it).tag_name(), "body");
+
+    const child_iterator body = it;
+
+    it = begin;
+    begin = it->child()->begin();
+    end = it->child()->end();
+
+    EXPECT_EQ(
+      body
+      ->child()->begin()
+      ->child()->begin()
+      ->child()->begin()
+      ->child()->begin()
+      ->child()->begin()
+      ->tag_name(),
+      "img"
+    );
+#if 0
+    std::copy(
+      body->child()->begin(), 
+      body->child()->end(), 
+      std::ostream_iterator<node>(std::cout, "\n")
+    );
+#endif
   });
 }
 
@@ -93,10 +144,14 @@ int main(int argc, char* argv[])
 {
   testing::InitGoogleTest(&argc, argv);
 
-  char** argv2 = new char*[argc+1];
+  char** argv2 = new char*[argc+2];
   int argc2;
   for (argc2 = 0; argc2 < argc; argc2++)
     argv2[argc2] = argv[argc2];
+  SCHECK(argv2[argc2++] = strdup(
+    "--url=file:///home/serg/cef/prj1/tests/data/"
+    "CU3OX - DEMO Page.html"
+  ));
   SCHECK(argv2[argc2++] = strdup("--off-screen"));
 
   offscreen(

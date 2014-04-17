@@ -118,6 +118,7 @@ public:
     return res;
   }
 
+#if 1
   node_iterators::wrap operator->() 
   { 
     return dom; 
@@ -127,6 +128,7 @@ public:
   { 
     return dom; 
   }
+#endif
 
   operator node_iterators::wrap()
   {
@@ -171,8 +173,8 @@ public:
   using difference_type = ptrdiff_t;
   using size_type = size_t;
   using value_type = xpath::node;
-  using pointer = xpath::node;
-  using const_pointer = const xpath::node;
+  using pointer = xpath::node*;
+  using const_pointer = const xpath::node*;
   using reference = xpath::node;
   using const_reference = const xpath::node;
   using iterator_category = std::input_iterator_tag;
@@ -186,7 +188,7 @@ public:
   {
     return (empty && o.empty)
       || (end_ovf == o.end_ovf 
-          && current->IsSame(o.current));
+          && ((wrap)current)->IsSame(o.current));
   }
 
   bool operator!=(const iterator_base& o) const noexcept
@@ -208,20 +210,21 @@ public:
     return current;
   }
 
-  reference operator->()
+  pointer operator->()
   {
     SCHECK(!empty);
     SCHECK(end_ovf == 0);
-    return current;
+    return &current;
   }
 
-  const_reference operator->() const
+  const_pointer operator->() const
   {
     SCHECK(!empty);
     SCHECK(end_ovf == 0);
-    return current;
+    return &current;
   }
 
+#if 0
   operator pointer() 
   {
     //SCHECK(!empty);
@@ -235,6 +238,7 @@ public:
     SCHECK(end_ovf == 0);
     return current;
   }
+#endif
 
 protected:
   // Protecting ctrs makes this class "technical" only
@@ -318,7 +322,9 @@ public:
   iterator& operator++() noexcept
   {
     // NB not forward after the end()
-    if (const wrap next = current->GetNextSibling())
+    if (const wrap next = 
+        ((wrap)current)->GetNextSibling()
+        )
       current = next;
     else {
       ++end_ovf;
@@ -421,7 +427,7 @@ protected:
   iterator(node context_node, end_t) noexcept
     : iterator_base(
         context_node, 
-        (pointer) iterator(context_node).axis_last(),
+        * iterator(context_node).axis_last(),
         +1
       )
   {}
@@ -432,7 +438,7 @@ protected:
     auto ch = iterator<axis::child>(context);
 
     while (ch.end_ovf == 0) {
-      ch = iterator<axis::child>((pointer) ch, end_t());
+      ch = iterator<axis::child>(*ch, end_t());
     }
 
     return iterator(ch.context);
@@ -503,8 +509,19 @@ node::descendant() const
 std::ostream&
 operator<< (std::ostream& out, CefRefPtr<CefDOMNode> dom);
 
+// Must be in a namespace for Koeing lookup
+namespace xpath {
+
+inline std::ostream&
+operator<< (std::ostream& out, const node& dom)
+{
+  return out << (CefRefPtr<CefDOMNode>) dom;
+}
+
 //! prints matched tags
 std::ostream&
-operator<< (std::ostream& out, const xpath::select& sel);
+operator<< (std::ostream& out, const select& sel);
+
+}
 
 #endif
