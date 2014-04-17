@@ -15,6 +15,7 @@ add_executable(xpath_test
 target_link_libraries(xpath_test ${CEF_LIBRARIES})
 target_link_libraries(xpath_test concurrent)
 target_link_libraries(xpath_test ${Boost_SYSTEM_LIBRARY})
+target_link_libraries(xpath_test ${Boost_FILESYSTEM_LIBRARY})
 target_link_libraries(xpath_test log4cxx pthread)
 target_link_libraries(xpath_test gtest)
 target_link_libraries(xpath_test offscr)

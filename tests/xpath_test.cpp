@@ -3,6 +3,7 @@
 #include <string.h>
 #include <atomic>
 #include <functional>
+#include <boost/filesystem.hpp>
 #include "include/cef_command_line.h"
 #include "include/cef_task.h"
 #include "Logging.h"
@@ -16,6 +17,8 @@ using namespace xpath;
 using namespace curr;
 
 namespace {
+
+using log = Logger<LOG::Root>;
 
 const int browser_id = 1;
 
@@ -148,10 +151,12 @@ int main(int argc, char* argv[])
   int argc2;
   for (argc2 = 0; argc2 < argc; argc2++)
     argv2[argc2] = argv[argc2];
-  SCHECK(argv2[argc2++] = strdup(
-    "--url=file:///home/serg/cef/prj1/tests/data/"
-    "CU3OX - DEMO Page.html"
+  SCHECK(argv2[argc2++] = strdup((
+    std::string("--url=file://")
+    + boost::filesystem::current_path().string()
+    + "/data/CU3OX - DEMO Page.html").c_str()
   ));
+  LOG_DEBUG(log, "--url=" << argv2[argc2-1]);
   SCHECK(argv2[argc2++] = strdup("--off-screen"));
 
   offscreen(

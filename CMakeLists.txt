@@ -11,7 +11,8 @@ find_package(CEF REQUIRED)
 find_package(GTK2 REQUIRED)
 
 set(Boost_USE_MULTITHREADED ON)  
-find_package(Boost 1.54 COMPONENTS system REQUIRED)
+find_package(Boost 1.54 COMPONENTS system filesystem
+  REQUIRED)
 
 set(CMAKE_CXX_FLAGS "-g -O0 -std=c++11 -Wall")
 
