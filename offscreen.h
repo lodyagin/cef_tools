@@ -5,5 +5,12 @@
  * @author Sergei Lodyagin
  */
 
-int offscreen(int argc, char* argv[]);
+#include <functional>
+
+int offscreen(
+  int argc, 
+  char* argv[],
+  const std::function<void()>& render_thread =
+    std::function<void()>()
+);
 

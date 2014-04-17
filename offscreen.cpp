@@ -13,6 +13,7 @@
 #include "include/cef_task.h"
 
 #include "Logging.h"
+#include "RThread.h"
 
 #include "offscreen.h"
 #include "task.h"
@@ -40,6 +41,12 @@ private:
 class renderer : public CefRenderProcessHandler
 {
 public:
+  renderer(const std::function<void()>& on_browser_created)
+    : on_created(on_browser_created)
+  {
+    assert(on_created);
+  }
+
   CefRefPtr<CefLoadHandler> GetLoadHandler() override
   {
     return new load;
@@ -50,6 +57,9 @@ public:
 
   void OnBrowserDestroyed
     (CefRefPtr<CefBrowser> br) override;
+
+protected:
+  std::function<void()> on_created;
 
 private:
   IMPLEMENT_REFCOUNTING(renderer);
@@ -65,6 +75,10 @@ namespace shared {
 class application : public CefApp
 {
 public:
+  application(const std::function<void()>& render_thread)
+    : th_render(render_thread)
+  {}
+
   //! Gets CefBrowserProcessHandler from browser process
   //! only. Use CefRenderProcessHandler for access same
   //! things from a renderer process.
@@ -77,8 +91,11 @@ public:
   CefRefPtr<CefRenderProcessHandler> 
   GetRenderProcessHandler() override
   {
-    return new renderer::handler::renderer;
+    return new renderer::handler::renderer(th_render);
   }
+
+protected:
+  std::function<void()> th_render;
 
 private:
   IMPLEMENT_REFCOUNTING(application);
@@ -86,12 +103,18 @@ private:
 
 }
 
-int offscreen(int argc, char* argv[])
+int offscreen(
+  int argc, 
+  char* argv[],
+  const std::function<void()>& render_thread
+)
 {
   using namespace shared;
 
   const CefMainArgs main_args(argc, argv);
-  CefRefPtr<application> app(new application);
+  CefRefPtr<application> app(
+    new application(render_thread)
+  );
 
   // Subprocess executor
   const int sub_exit = CefExecuteProcess
@@ -197,22 +220,12 @@ void renderer::OnBrowserCreated(CefRefPtr<CefBrowser> br)
     browser_repository::instance().create_object
       (shared::browser::Par(br)) -> id;
 
-  // Start the dom_ready wait thread
-  StdThread::create<LightThread>([browser_id]()
-  {
-    CURR_WAIT(
-      browser_repository::instance()
-        . get_object_by_id(browser_id)
-        -> is_dom_ready(),
-      60001
-    );
-
-    // post the flash search task
-    CefPostTask(
-      TID_RENDERER, 
-      new ::renderer::search::flash(browser_id)
-    );
-  })->start();
+  // Start the on_create thread
+  if (on_created) {
+    StdThread::create<LightThread>(
+      on_created, "render_thread"
+    )->start();
+  }
 }
 
 void renderer::OnBrowserDestroyed(CefRefPtr<CefBrowser> br)
