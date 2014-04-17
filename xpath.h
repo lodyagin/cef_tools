@@ -81,6 +81,7 @@ class node
   friend std::ostream&
   operator<< (std::ostream& out, const node& nd);
 
+#if 0
   constexpr static auto attr_names =
    std::array<const char*, 9> 
   {
@@ -94,6 +95,7 @@ class node
     "lang"
     "xml:lang"
   };
+#endif
 
 public:
   enum class type { not_initialized, dom, attribute };
@@ -151,17 +153,17 @@ public:
     return res;
   }
 
-#if 0
-  int n_attrs() const
+#if 1
+  size_t n_attrs() const
   {
-    if (!dom->HasElementAttributes())
+    if (!dom->IsElement())
       return 0;
 
-    CefDOMNode::AttributeMap attrs;
-    dom->GetElementAttributes(attrs);
-    return attrs.size();
+    return dom->GetNumberOfElementAttributes();
   }
+#endif
 
+#if 0
   bool operator==(CefRefPtr<CefDOMNode> o) const
   {
     return (empty && o.get() == nullptr)
@@ -243,6 +245,7 @@ public:
   {
     return (empty && o.empty)
       || (ovf == o.ovf 
+          && current.attr_idx == o.current.attr_idx
           && ((wrap)current)->IsSame(o.current));
   }
 
@@ -611,8 +614,6 @@ public:
   {
     // while
     ++(current.attr_idx);
-    std::cout << "attr_idx=" << current.attr_idx 
-      << std::endl;
     return *this;
   }
 
@@ -626,8 +627,6 @@ public:
   iterator& operator--() noexcept
   {
     --(current.attr_idx);
-    std::cout << "attr_idx=" << current.attr_idx 
-      << std::endl;
     return *this;
   }
 
@@ -644,10 +643,8 @@ protected:
   {}
 
   iterator(node context_node, end_t) noexcept
-    : iterator_base(context_node, context_node.attr_names.size())
+    : iterator_base(context_node, context_node.n_attrs())
   {}
-
-  static_assert(node::attr_names.size() == 9, "FAIL");
 };
 
 }
@@ -732,10 +729,12 @@ operator<< (std::ostream& out, const node& nd)
       return out << (CefRefPtr<CefDOMNode>) nd.dom;
     case node::type::attribute:
       {
-        const CefString name = nd.attr_names.at(nd.attr_idx);
+        CefString name, value;
+        nd.dom->GetElementAttributeByIdx(
+          nd.attr_idx, name, value
+        );
         return out << '[' << name.ToString() << '=' 
-          << nd.dom->GetElementAttribute(name).ToString() 
-          << ']';
+          << value.ToString() << ']';
       }
     case node::type::not_initialized:
       return out << "(node not initialized)";

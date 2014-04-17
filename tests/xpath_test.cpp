@@ -216,6 +216,7 @@ TEST(Xpath, AttributeAxis) {
     auto i = root.descendant()->begin();
     ++i; ++i; 
     EXPECT_EQ(i->tag_name(), "html");
+    EXPECT_EQ(i->n_attrs(), 3);
     {
       const int n_attrs = std::count_if(
         i->attribute()->begin(), 
@@ -224,13 +225,15 @@ TEST(Xpath, AttributeAxis) {
       );
       EXPECT_EQ(n_attrs, 3);
     }
-    std::cout << *(i->attribute()->begin()) << std::endl;
-    std::cout << *--(i->attribute()->end()) << std::endl;
-#if 1
+    auto end = i->attribute()->end();
+    --(i->attribute()->end());
+    EXPECT_EQ(end, i->attribute()->end());
+#if 0
     std::copy(
-      i->attribute()->begin(), 
+      //i->attribute()->begin(), 
+      ----end,
       i->attribute()->end(), 
-      std::ostream_iterator<node>(std::cout, "; ")
+      std::ostream_iterator<node>(std::cout, "; \n")
     );
     std::cout << std::endl;
 #endif
