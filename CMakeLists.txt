@@ -18,6 +18,7 @@ set(CMAKE_CXX_FLAGS "-g -O0 -std=c++11 -Wall")
 add_subdirectory(CUnit/CUnit)
 add_subdirectory(PEvents)
 add_subdirectory(concurro/C++)
+add_subdirectory(tests)
 
 set(offscreen_SOURCES
     browser.cpp
