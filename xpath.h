@@ -158,6 +158,11 @@ protected:
   bool empty = true;
 };
 
+using self_iterator = node::iterator<axis::self>;
+using child_iterator = node::iterator<axis::child>;
+using descendant_iterator = 
+  node::iterator<axis::descendant>;
+
 namespace node_iterators {
 
 class iterator_base
@@ -242,7 +247,8 @@ protected:
   ) noexcept
     : context(context_node), 
       current(current_node),
-      end_ovf(after_end)
+      end_ovf(after_end),
+      empty(false)
   {}
 
   // the context node is not used by some iterators (e.g.,

@@ -54,6 +54,27 @@ TEST(XpathBasic, Wrap) {
   });
 }
 
+TEST(Xpath, SelfAxis) {
+  test_dom([](CefRefPtr<CefDOMNode> r)
+  {
+    
+    node root(r);
+    self_iterator begin = root.self()->begin();
+    self_iterator end = root.self()->end();
+    
+    EXPECT_NE(begin, end);
+    self_iterator it = begin;
+    ++it;
+    EXPECT_NE(it, begin);
+    EXPECT_EQ(it, end);
+    EXPECT_NE(begin, end);
+    ++it;
+    EXPECT_NE(it, begin);
+    EXPECT_NE(it, end);
+    EXPECT_NE(begin, end);
+  });
+}
+
 std::atomic<int> test_result(13);
 
 class test_runner : public CefTask
