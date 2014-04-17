@@ -1,4 +1,5 @@
 #include <string.h>
+#include <atomic>
 #include "include/cef_command_line.h"
 #include "Logging.h"
 #include "Event.h"
@@ -27,10 +28,12 @@ int main(int argc, char* argv[])
     argv2[argc2] = argv[argc2];
   SCHECK(argv2[argc2++] = strdup("--off-screen"));
 
+  std::atomic<int> test_result(13);
+
   offscreen(
     argc2, 
     argv2,
-    []()
+    [&test_result]()
     {
       CURR_WAIT_L(
         Logger<LOG::Root>::logger(),
@@ -40,7 +43,8 @@ int main(int argc, char* argv[])
         60001
       );
 
-      RUN_ALL_TESTS();
+      test_result = RUN_ALL_TESTS();
     }
   );
+  return test_result;
 }
