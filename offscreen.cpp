@@ -104,6 +104,8 @@ int main(int argc, char* argv[])
     // it was a sub process, it is done, return
     return sub_exit;
 
+  // main process only:
+
 #if 0
   gtk_init(&argc, &argv);
 #endif
