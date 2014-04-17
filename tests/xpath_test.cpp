@@ -1,5 +1,6 @@
 #include <string.h>
 #include <atomic>
+#include <functional>
 #include "include/cef_command_line.h"
 #include "include/cef_task.h"
 #include "Logging.h"
@@ -12,11 +13,45 @@
 using namespace xpath;
 using namespace curr;
 
+namespace {
+
+const int browser_id = 1;
+
+using fun_t = std::function<void(CefRefPtr<CefDOMNode>)>;
+
+class DOMVisitor : public CefDOMVisitor
+{
+public:
+  DOMVisitor(const fun_t& f) : fun(f) {}
+
+  void Visit(CefRefPtr<CefDOMDocument> d) override
+  {
+    fun(d->GetDocument());
+  }
+
+protected:
+  fun_t fun;
+
+private:
+  IMPLEMENT_REFCOUNTING();
+};
+
+void test_dom(const fun_t& fun)
+{
+  shared::browser_repository::instance()
+    . get_object_by_id(browser_id) -> br
+    -> GetMainFrame() -> VisitDOM(new DOMVisitor(fun));
+}
+
+}
+
 TEST(XpathBasic, Wrap) {
   using namespace node_iterators;
-  EXPECT_TRUE(true);
-  // EXPECT_TRUE((bool) wrap(CefRefPtr<CefDOMNode(nullptr)));
-  // TODO EXPECT_FALSE
+  test_dom([](CefRefPtr<CefDOMNode> root)
+  {
+    EXPECT_TRUE((bool) wrap(root));
+    EXPECT_FALSE((bool) wrap(root->GetParent()));
+  });
 }
 
 std::atomic<int> test_result(13);
