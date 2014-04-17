@@ -14,6 +14,7 @@
 
 #include "Logging.h"
 
+#include "offscreen.h"
 #include "task.h"
 #include "browser.h"
 #include "proc_browser.h"
@@ -85,14 +86,9 @@ private:
 
 }
 
-int main(int argc, char* argv[])
+int offscreen(int argc, char* argv[])
 {
   using namespace shared;
-
-  std::cout << "main started: ";
-  for (int i = 1; i < argc; i++)
-    std::cout << argv[i] << " ";
-  std::cout << std::endl;
 
   const CefMainArgs main_args(argc, argv);
   CefRefPtr<application> app(new application);
@@ -112,14 +108,17 @@ int main(int argc, char* argv[])
 
   CefSettings settings;
   CefInitialize(main_args, settings, app.get(), nullptr);
+#if 0
   screenshot::take_delayed(
     1, 
     CefRect(0, 0, 2700, 2700), 
     "test.png", 
     28
   );
+#endif
   CefRunMessageLoop();
   CefShutdown();
+  return 0;
 }
 
 namespace renderer { namespace handler {

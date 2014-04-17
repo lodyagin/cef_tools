@@ -40,12 +40,15 @@ include_directories(${GTK2_INCLUDE_DIRS})
 include_directories(${CMAKE_SOURCE_DIR}/PEvents)
 include_directories(${CMAKE_SOURCE_DIR}/concurro/C++)
 
-add_executable(offscreen ${offscreen_SOURCES})
+add_library(offscr STATIC ${offscreen_SOURCES})
 
-target_link_libraries(offscreen ${CEF_LIBRARIES})
-target_link_libraries(offscreen concurrent)
-target_link_libraries(offscreen ${Boost_SYSTEM_LIBRARY})
-target_link_libraries(offscreen log4cxx pthread)
-target_link_libraries(offscreen png)
+target_link_libraries(offscr ${CEF_LIBRARIES})
+target_link_libraries(offscr concurrent)
+target_link_libraries(offscr ${Boost_SYSTEM_LIBRARY})
+target_link_libraries(offscr log4cxx pthread)
+target_link_libraries(offscr png)
+
+add_executable(offscreen main.cpp)
+target_link_libraries(offscreen offscr)
 
 
