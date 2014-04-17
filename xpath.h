@@ -17,6 +17,13 @@
 #include "include/cef_dom.h"
 #include "SCheck.h"
 
+// [begin, end) overflow asswertiong
+#if 1
+#  define ovf_assert(x)
+#else
+#  define ovf_assert(x) assert(x)
+#endif
+
 namespace xpath 
 {
 
@@ -84,14 +91,6 @@ public:
   node(CefRefPtr<CefDOMNode> dom_, int depth_ = -1) 
     : node(node_iterators::wrap(dom_), depth_)
   {}
-#if 1
-#else
-    : dom(dom_), depth(depth_), empty(false)
-  {
-    SCHECK(dom);
-    assert((dom.get() == nullptr) == empty);
-  }
-#endif
 
   template<xpath::axis ax>
   class axis;
@@ -118,7 +117,19 @@ public:
     return res;
   }
 
-#if 1
+#if 0
+  bool operator==(CefRefPtr<CefDOMNode> o) const
+  {
+    return (empty && o.get() == nullptr)
+      || dom->IsSame(o);
+  }
+
+  bool operator!=(CefRefPtr<CefDOMNode> o) const
+  {
+    return !operator==(o);
+  }
+#endif
+
   node_iterators::wrap operator->() 
   { 
     return dom; 
@@ -128,7 +139,6 @@ public:
   { 
     return dom; 
   }
-#endif
 
   operator node_iterators::wrap()
   {
@@ -187,7 +197,7 @@ public:
   bool operator==(const iterator_base& o) const noexcept
   {
     return (empty && o.empty)
-      || (end_ovf == o.end_ovf 
+      || (ovf == o.ovf 
           && ((wrap)current)->IsSame(o.current));
   }
 
@@ -199,28 +209,28 @@ public:
   reference operator* ()
   {
     SCHECK(!empty);
-    SCHECK(end_ovf == 0);
+    SCHECK(ovf == 0);
     return current;
   }
 
   const_reference operator* () const
   {
     SCHECK(!empty);
-    SCHECK(end_ovf == 0);
+    SCHECK(ovf == 0);
     return current;
   }
 
   pointer operator->()
   {
     SCHECK(!empty);
-    SCHECK(end_ovf == 0);
+    SCHECK(ovf == 0);
     return &current;
   }
 
   const_pointer operator->() const
   {
     SCHECK(!empty);
-    SCHECK(end_ovf == 0);
+    SCHECK(ovf == 0);
     return &current;
   }
 
@@ -228,14 +238,14 @@ public:
   operator pointer() 
   {
     //SCHECK(!empty);
-    SCHECK(end_ovf == 0);
+    SCHECK(ovf == 0);
     return current;
   }
 
   operator const_pointer() const
   {
     //SCHECK(!empty); 
-    SCHECK(end_ovf == 0);
+    SCHECK(ovf == 0);
     return current;
   }
 #endif
@@ -247,11 +257,11 @@ protected:
   iterator_base(
     node context_node,
     node current_node,
-    size_type after_end = 0
+    difference_type overflow = 0
   ) noexcept
     : context(context_node), 
       current(current_node),
-      end_ovf(after_end),
+      ovf(overflow),
       empty(false)
   {}
 
@@ -262,9 +272,9 @@ protected:
 
   node current;
 
-  // The end()+end_ovf iterator points to the same current
-  // as end()-1.
-  size_type end_ovf = 0;
+  // The end()+N (N>=0) iterator points to the same
+  // this->current as end()-1.
+  difference_type ovf = 0;
 
   //! true if context and current are not initialized
   bool empty = true;
@@ -287,8 +297,8 @@ public:
 
   iterator& operator++() noexcept
   {
-    ++end_ovf;
-    assert(end_ovf);
+    ++ovf;
+    ovf_assert(ovf == 1);
     return *this;
   }
 
@@ -296,6 +306,20 @@ public:
   {
     iterator copy(*this);
     ++(*this);
+    return copy;
+  }
+
+  iterator& operator--() noexcept
+  {
+    --ovf;
+    ovf_assert(ovf == 0);
+    return *this;
+  }
+
+  iterator operator--(int) noexcept
+  {
+    iterator copy(*this);
+    --(*this);
     return copy;
   }
 
@@ -321,15 +345,24 @@ public:
 
   iterator& operator++() noexcept
   {
-    // NB not forward after the end()
-    if (const wrap next = 
-        ((wrap)current)->GetNextSibling()
-        )
-      current = next;
-    else {
-      ++end_ovf;
-      assert(end_ovf);
+    if (ovf < 0) {
+      ovf_assert(false);
+      ++ovf;
+      assert(current->IsSame(context)
+        || current->GetParent()->IsSame(context));
     }
+    else if (const wrap next = current->GetNextSibling())
+    {
+      current = next;
+      assert(current->GetParent()->IsSame(context));
+    }
+    else {
+      ++ovf;
+      ovf_assert(ovf == 1);
+      assert(current->IsSame(context)
+        || current->GetParent()->IsSame(context));
+    }
+
     assert(current->GetParent()->IsSame(context));
     return *this;
   }
@@ -341,15 +374,48 @@ public:
     return copy;
   }
 
+  iterator& operator--() noexcept
+  {
+    if (ovf > 0) {
+      --ovf;
+      ovf_assert(ovf == 0);
+      assert(current->IsSame(context)
+        || current->GetParent()->IsSame(context));
+    }
+    else if (const wrap prev = 
+             current->GetPreviousSibling()
+             )
+    {
+      current = prev;
+//      std::cout << "1> " << current.tag_name() << std::endl;
+      assert(current->GetParent()->IsSame(context));
+    }
+    else {
+      ovf_assert(false);
+      --ovf;
+//      std::cout << "2> " << ovf << std::endl;
+      assert(current->IsSame(context)
+        || current->GetParent()->IsSame(context));
+    }
+    return *this;
+  }
+
+  iterator operator--(int) noexcept
+  {
+    iterator copy(*this);
+    --(*this);
+    return copy;
+  }
+
 protected:
-  explicit iterator(node context_node) 
-    noexcept
+  explicit iterator(node context_node) noexcept
     : iterator_base(
         context_node, 
-        context_node->GetFirstChild().get() 
-          ? node(context_node->GetFirstChild()) 
+        context_node->GetFirstChild().get()
+          ? node(context_node->GetFirstChild())
           : context_node,
         context_node->GetFirstChild().get() == nullptr
+          ? +1 : 0
       )
   {}
 
@@ -357,7 +423,7 @@ protected:
     : iterator_base(
         context_node, 
         context_node->GetLastChild().get() 
-          ? node(context_node->GetLastChild()) 
+          ? node(context_node->GetLastChild())
           : context_node,
         +1
       )
@@ -375,9 +441,17 @@ public:
 
   iterator& operator++() noexcept
   {
+    if (ovf < 0) {
+      ++ovf;
+      ovf_assert(ovf == 0);
+      //std::cout << "1O" << ovf << std::endl;
+      return *this;
+    }
+
     // go to the child first
     if (const wrap child = current->GetFirstChild())
     {
+      //std::cout << "FC" << std::endl;
       current = child;
       return *this;
     }
@@ -385,25 +459,41 @@ public:
     // now try the next sibling
     if (const wrap sibling = current->GetNextSibling())
     {
+      //std::cout << "NS" << std::endl;
       current = sibling;
       return *this;
     }
     
     // now try the parent's next sibling
-    if (*this != iterator<axis::self>(context)) {
-      const wrap parent = current->GetParent();
-      if (const wrap parent_sibling = 
-          parent->GetNextSibling())
+    while (!current->IsSame(context))
+    {
+      /*std::cout << "[context = " << context.tag_name() 
+              << ", current = " << current.tag_name()
+              << ']';*/
+      if (const wrap parent = current->GetParent())
       {
-        current = parent_sibling;
-        return *this;
-      }
+        //std::cout << "^" << std::flush;
+        current = parent;
+        if (current->IsSame(context))
+          break; // go to end()
+
+        if (const wrap parent_sibling = 
+            current->GetNextSibling())
+        {
+          //std::cout << "PNS" << node(parent_sibling).tag_name() << std::endl;
+          current = parent_sibling;
+          return *this;
+        }
+      } 
+      else break;
     }
 
     // ok, we went to the end
-    ++end_ovf;
-    assert(end_ovf);
-    return *this;
+    assert(current->IsSame(context));
+    ++ovf;
+    ovf_assert(ovf == 1);
+    //std::cout << "2O" << ovf << std::endl;
+    return *this = iterator(context, end_t());
   }
 
   iterator operator++(int) noexcept
@@ -417,32 +507,42 @@ protected:
   explicit iterator(node context_node) noexcept
     : iterator_base(
         context_node, 
-        context_node->GetFirstChild().get() 
+        context_node->GetFirstChild().get()
           ? node(context_node->GetFirstChild())
           : context_node,
         context_node->GetFirstChild().get() == nullptr
       )
   {}
 
-  iterator(node context_node, end_t) noexcept
-    : iterator_base(
-        context_node, 
-        * iterator(context_node).axis_last(),
-        +1
-      )
+  iterator(node context_node, node current_node) noexcept
+    : iterator_base(context_node, current_node, 0)
   {}
 
+  iterator(node context_node, end_t) noexcept
+    : iterator_base(context_node, context_node, +1)
+  {}
+
+#if 0 // it can be used for axis::descendant_or_self
   //! get the last element of the iterator axis
   iterator axis_last()
   {
-    auto ch = iterator<axis::child>(context);
+    auto last = iterator<axis::child>(context);
+    decltype(last) begin;
 
-    while (ch.end_ovf == 0) {
-      ch = iterator<axis::child>(*ch, end_t());
-    }
+    do {
+      begin = last;
+      last = --iterator<axis::child>(
+        begin.current, 
+        end_t()
+      );
+    } while (begin != last);
 
-    return iterator(ch.context);
+    return iterator<axis::descendant>(
+      context, 
+      last.current
+    );
   }
+#endif
 };
 
 }
