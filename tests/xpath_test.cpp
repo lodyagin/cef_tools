@@ -29,6 +29,8 @@ class DOMVisitor : public CefDOMVisitor
 public:
   DOMVisitor(const fun_t& f) : fun(f) {}
 
+  // DOM is valid only inside this function
+  // do not store DOM externally!
   void Visit(CefRefPtr<CefDOMDocument> d) override
   {
     fun(d->GetDocument());
