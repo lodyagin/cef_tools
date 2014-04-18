@@ -119,16 +119,20 @@ TEST(Xpath, ChildAxis) {
     begin = it->child()->begin();
     end = it->child()->end();
 
+    const auto img = body
+      ->child()->begin()
+      ->child()->begin()
+      ->child()->begin()
+      ->child()->begin()
+      ->child()->begin();
+    EXPECT_EQ(img ->tag_name(), "img");
+
+    // empty tag
     EXPECT_EQ(
-      body
-      ->child()->begin()
-      ->child()->begin()
-      ->child()->begin()
-      ->child()->begin()
-      ->child()->begin()
-      ->tag_name(),
-      "img"
+      img->child()->begin(),
+      img->child()->end()
     );
+
 #if 0
     std::copy(
       body->child()->begin(), 
@@ -147,9 +151,10 @@ TEST(Xpath, DescendantAxis) {
     // TODO EXPECT_EQ(*begin, node(r));
     descendant_iterator end =  
       node(r).descendant()->end();
+    EXPECT_NE(begin, end);
+    auto doctype = *begin;
 
 #if 0
-    // out only tags
     std::copy(
       begin, 
       end, 
@@ -164,7 +169,6 @@ TEST(Xpath, DescendantAxis) {
       [](const node& n) { return n->IsElement(); }
     );
     EXPECT_EQ(n_tags, 67);
-
     {
       ++begin; // at <!-- ...>
       const int n_tags2 = std::count_if(
@@ -175,38 +179,46 @@ TEST(Xpath, DescendantAxis) {
       EXPECT_EQ(n_tags2, 0);
     }
 
-    {
     ++begin; ++begin;
-    EXPECT_EQ(begin->tag_name(), "head");
-    end = begin->descendant()->end();
-    auto new_begin = begin->descendant()->begin();
-    auto old_begin = begin;
-    ++old_begin;
-    EXPECT_EQ(old_begin, new_begin);
+    auto meta = begin; ++meta; // points to 1st meta tag
+    {
+      EXPECT_EQ(begin->tag_name(), "head");
+      end = begin->descendant()->end();
+      auto new_begin = begin->descendant()->begin();
+      auto old_begin = begin;
+      ++old_begin;
+      EXPECT_EQ(old_begin, new_begin);
 #if 0
-    auto new_begin2 = new_begin;
-    --new_begin2;
-    EXPECT_EQ(new_begin2, begin);
+      auto new_begin2 = new_begin;
+      --new_begin2;
+      EXPECT_EQ(new_begin2, begin);
 #endif
-    begin = new_begin;
+      begin = new_begin;
   
 #if 0
-    // out only tags
-    std::copy_if(
-      begin, 
-      end, 
-      std::ostream_iterator<node>(std::cout, "\n"),
-      [](const node& n) { return n->IsElement(); }
-    );
+      // out only tags
+      std::copy_if(
+        begin, 
+        end, 
+        std::ostream_iterator<node>(std::cout, "\n"),
+        [](const node& n) { return n->IsElement(); }
+        );
 #endif
 
-    const int n_tags3 = std::count_if(
-      begin, 
-      end, 
-      [](const node& n) { return n->IsElement(); }
-    );
-    EXPECT_EQ(n_tags3, 12);
+      const int n_tags3 = std::count_if(
+        begin, 
+        end, 
+        [](const node& n) { return n->IsElement(); }
+        );
+      EXPECT_EQ(n_tags3, 12);
     }
+    
+    // empty axis check
+    // empty tag
+    EXPECT_EQ(
+      meta->descendant()->begin(),
+      meta->descendant()->end()
+    );
   });
 }
 
@@ -230,17 +242,21 @@ TEST(Xpath, AttributeAxis) {
     EXPECT_EQ(end, i->attribute()->end());
 #if 0
     std::copy(
-      //i->attribute()->begin(), 
-      ----end,
+      i->attribute()->begin(), 
       i->attribute()->end(), 
       std::ostream_iterator<node>(std::cout, "; \n")
     );
     std::cout << std::endl;
 #endif
 
-    ++i;
-    EXPECT_EQ(i->tag_name(), "head");
-    //EXPECT_EQ(i->n_attrs(), 0);
+    {
+      ++i;
+      EXPECT_EQ(i->tag_name(), "head");
+      EXPECT_EQ(i->n_attrs(), 0);
+      const auto begin = i->attribute()->begin();
+      const auto end = i->attribute()->end();
+      EXPECT_EQ(begin, end);
+    }
   });
 }
 

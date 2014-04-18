@@ -93,6 +93,8 @@ public:
   template<xpath::axis axis>
   using iterator = node_iterators::iterator<axis>;
 
+  node(const node& o) = default;
+
   node(node_iterators::wrap dom_) 
     : dom(dom_), the_type(type::dom)
   {
@@ -112,6 +114,8 @@ public:
     assert((dom.get() == nullptr) == 
       (the_type == type::not_initialized));
   }
+
+  node& operator=(const node& o) = default;
 
   template<xpath::axis ax>
   class axis_;
@@ -153,22 +157,7 @@ public:
 
   /* attributes accessors */
     
-  operator std::pair<std::string, std::string>() const
-  {
-    SCHECK(the_type == type::attribute);
-
-    CefString name, value;
-    dom->GetElementAttributeByIdx(
-      attr_idx, 
-      name,
-      value
-    );
-
-    return std::make_pair(
-      name.ToString(), 
-      value.ToString()
-    );
-  }
+  operator std::pair<std::string, std::string>() const;
 
 #if 0
   std::string name() const
@@ -246,6 +235,8 @@ using descendant_iterator =
 
 namespace node_iterators {
 
+//! All axis iterators types are interoperable 
+//! (can be safely reinterpret_cast-ed).
 class iterator_base
 {
 public:
@@ -476,7 +467,8 @@ protected:
         context_node->GetFirstChild().get()
           ? node(context_node->GetFirstChild())
           : context_node,
-        +1
+        // begin == end for an empty axis
+        context_node->GetFirstChild().get() ? +1 : 0
       )
   {}
 };
@@ -492,6 +484,12 @@ public:
 
   iterator& operator++() noexcept
   {
+    if (current->IsSame(context)) {
+      ++ovf;
+      ovf_assert(ovf);
+      LOG_TRACE(log, "O" << ovf);
+    }
+
     // go to the child first
     if (const wrap child = current->GetFirstChild())
     {
@@ -531,11 +529,6 @@ public:
       }
     }
 
-    if (current->IsSame(context)) {
-      ++ovf;
-      LOG_TRACE(log, "O" << ovf);
-    }
-    ovf_assert(ovf);
     return *this;
   }
 
@@ -557,12 +550,13 @@ protected:
       )
   {}
 
-  iterator(node context_node, node current_node) noexcept
-    : iterator_base(context_node, current_node, 0)
-  {}
-
   iterator(node context_node, end_t) noexcept
-    : iterator_base(context_node, context_node, +1)
+    : iterator_base(
+        context_node, 
+        context_node,
+        // begin == end for an empty axis
+        context_node->GetFirstChild().get() ? 0 : +1
+      )
   {}
 
 private:
@@ -620,8 +614,9 @@ protected:
   iterator(node context_node, end_t) noexcept
     : iterator_base(
         context_node, 
-        +1, // ovf, to be compat with other types or iters
-        0 //NB, not context_node.n_attrs() (it is cycled)
+        // if no attrs begin == end
+        context_node.n_attrs() == 0 ? 0 : +1,
+        0 //it is cycled
       )
   {}
 };
@@ -668,44 +663,7 @@ protected:
   node dom;
 };
 
-inline std::shared_ptr<node::axis_<axis::self>> node::self() const
-{
-  return std::make_shared<axis_<xpath::axis::self>>(dom);
-}
-
-inline std::shared_ptr<node::axis_<axis::child>> node::child() const
-{
-  return std::make_shared<axis_<xpath::axis::child>>(dom);
-}
-
-inline std::shared_ptr<node::axis_<axis::descendant>> 
-node::descendant() const
-{
-  return std::make_shared<axis_<xpath::axis::descendant>>(dom);
-}
-
-inline std::shared_ptr<node::axis_<axis::attribute>> 
-node::attribute() const
-{
-  return std::make_shared<axis_<xpath::axis::attribute>>(dom);
-}
-
-#if 0
-}
-}
-}
-
-//! prints <tag attrs...> of the node
-std::ostream&
-operator<< (std::ostream& out, CefRefPtr<CefDOMNode> dom);
-
-namespace renderer { 
-namespace dom_visitor{ 
-namespace xpath {
-#endif
-
 // Must be in the namespace for Koeing lookup
-
 std::ostream&
 operator<< (std::ostream& out, const node& nd);
 
