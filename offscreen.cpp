@@ -216,9 +216,8 @@ void renderer::OnBrowserCreated(CefRefPtr<CefBrowser> br)
   using namespace shared;
 
   // register the new browser in the browser_repository
-  const int browser_id = 
-    browser_repository::instance().create_object
-      (shared::browser::Par(br)) -> id;
+  browser_repository::instance().create_object
+    (shared::browser::Par(br)) -> id;
 
   // Start the on_create thread
   if (on_created) {

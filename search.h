@@ -12,6 +12,7 @@
 
 namespace renderer { namespace search {
 
+#if 0
 //! Search flash plugin objects
 class flash : public CefTask
 {
@@ -31,5 +32,6 @@ private:
 //  typedef curr::Logger<flash> log;
   IMPLEMENT_REFCOUNTING();
 };
+#endif
 
 }}

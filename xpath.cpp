@@ -14,7 +14,59 @@
 #include "string_utils.h"
 #include "xpath.h"
 
-xpath::select::select(
+namespace renderer {
+namespace dom_visitor {
+namespace xpath {
+
+std::ostream&
+operator<< (std::ostream& out, const node& nd)
+{
+  using namespace std;
+
+  switch(nd.the_type)
+  {
+    case node::type::dom:
+    {
+      if (!nd->IsElement())
+        return out << "(not_element)";
+
+      // tag name
+      out << '<' << nd.tag_name();
+
+      // attributes
+      for (pair<string, string> p : *nd.attribute())
+        out << ' ' << p.first << "=\"" << p.second << '"';
+      out << '>';
+
+      // bounding rect
+      const CefRect r = nd->GetBoundingClientRect();
+      out << " [" << r.x << ", " << r.y << ", " << r.width
+         << ", " << r.height << "]";
+
+      return out;
+    }
+    case node::type::attribute:
+    {
+#if 1
+      const pair<string, string> p(nd);
+      return out << '{' << p.first << '=' << p.second << '}';
+#else
+      CefString name, value;
+      nd->GetElementAttributeByIdx(
+        nd.attr_idx, name, value
+      );
+      return out << '[' << name.ToString() << '=' 
+        << value.ToString() << ']';
+#endif
+    }
+    case node::type::not_initialized:
+      return out << "(node not initialized)";
+    default:
+      THROW_NOT_IMPLEMENTED;
+  }
+}
+
+select::select(
   const std::string& tag_,
   const CefRefPtr<CefDOMNode>& dom_
 ) 
@@ -26,42 +78,7 @@ xpath::select::select(
 }
 
 std::ostream&
-operator<< (std::ostream& out, CefRefPtr<CefDOMNode> dom)
-{
-  assert(dom.get());
-  if (!dom->IsElement())
-    return out << "(not_element)";
-
-#if 0
-  if (!dom->HasElementAttributes())
-    return out << "(not_attributes)";
-#endif
-
-#if 0
-  CefDOMNode::AttributeMap attrs;
-  // it hang ups
-  dom->GetElementAttributes(attrs);
-#endif
-  out << '<' << dom->GetElementTagName();
-#if 0
-  for (auto p : attrs)
-    out << ' ' << p.first << "=\"" << p.second << '"';
-  out << '>';
-#else
-  out << " type=\"" << dom->GetElementAttribute("TYPE")
-      << "\">";
-#endif
-
-#if 1
-  const CefRect r = dom->GetBoundingClientRect();
-  out << " [" << r.x << ", " << r.y << ", " << r.width
-      << ", " << r.height << "]";
-#endif
-  return out;
-}
-
-std::ostream&
-operator<< (std::ostream& out, const xpath::select& sel)
+operator<< (std::ostream& out, const select& sel)
 {
   auto descendants = sel.context_node.descendant();
   std::copy_if(
@@ -79,4 +96,4 @@ operator<< (std::ostream& out, const xpath::select& sel)
   return out;
 }
 
-
+}}}

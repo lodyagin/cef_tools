@@ -15,6 +15,7 @@ using namespace curr;
 
 namespace renderer { namespace search {
 
+#if 0
 void flash::Execute()
 {
   using namespace shared;
@@ -35,5 +36,6 @@ void flash::Execute()
     . get_object_by_id(browser_id) -> br
     -> GetMainFrame() -> VisitDOM(new Visitor);
 }
+#endif
 
 }}

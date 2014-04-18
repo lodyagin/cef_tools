@@ -13,7 +13,7 @@
 #include "browser.h"
 #include "gtest/gtest.h"
 
-using namespace xpath;
+using namespace renderer::dom_visitor::xpath;
 using namespace curr;
 
 namespace {

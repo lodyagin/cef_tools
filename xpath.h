@@ -24,6 +24,12 @@
 #  define ovf_assert(x) assert(x)
 #endif
 
+// for usage in renderer thread (process) only
+namespace renderer {
+
+// for usage only inside the CefDOMVisitor::Visit
+namespace dom_visitor {
+
 namespace xpath 
 {
 
@@ -144,6 +150,40 @@ public:
 
     return dom->GetNumberOfElementAttributes();
   }
+
+  /* attributes accessors */
+    
+  operator std::pair<std::string, std::string>() const
+  {
+    SCHECK(the_type == type::attribute);
+
+    CefString name, value;
+    dom->GetElementAttributeByIdx(
+      attr_idx, 
+      name,
+      value
+    );
+
+    return std::make_pair(
+      name.ToString(), 
+      value.ToString()
+    );
+  }
+
+#if 0
+  std::string name() const
+  {
+    SCHECK(the_type == type::attribute);
+
+    CefString name, value;
+    dom->GetElementAttributeByIdx(
+      attr_idx, 
+      name,
+      value
+    );
+    return name.ToString();
+  }
+#endif
 
 #if 0
   bool operator==(CefRefPtr<CefDOMNode> o) const
@@ -650,42 +690,29 @@ node::attribute() const
   return std::make_shared<axis_<xpath::axis::attribute>>(dom);
 }
 
+#if 0
+}
+}
 }
 
 //! prints <tag attrs...> of the node
 std::ostream&
 operator<< (std::ostream& out, CefRefPtr<CefDOMNode> dom);
 
-// Must be in a namespace for Koeing lookup
+namespace renderer { 
+namespace dom_visitor{ 
 namespace xpath {
+#endif
 
-inline std::ostream&
-operator<< (std::ostream& out, const node& nd)
-{
-  switch(nd.the_type)
-  {
-    case node::type::dom:
-      return out << (CefRefPtr<CefDOMNode>) nd.dom;
-    case node::type::attribute:
-      {
-        CefString name, value;
-        nd.dom->GetElementAttributeByIdx(
-          nd.attr_idx, name, value
-        );
-        return out << '[' << name.ToString() << '=' 
-          << value.ToString() << ']';
-      }
-    case node::type::not_initialized:
-      return out << "(node not initialized)";
-    default:
-      THROW_NOT_IMPLEMENTED;
-  }
-}
+// Must be in the namespace for Koeing lookup
+
+std::ostream&
+operator<< (std::ostream& out, const node& nd);
 
 //! prints matched tags
 std::ostream&
 operator<< (std::ostream& out, const select& sel);
 
-}
+}}}
 
 #endif
