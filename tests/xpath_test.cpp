@@ -53,9 +53,9 @@ void test_dom(const fun_t& fun)
 }
 
 TEST(XpathBasic, Wrap) {
-  using namespace node_iterators;
   test_dom([](CefRefPtr<CefDOMNode> root)
   {
+    using namespace renderer::dom_visitor;
     EXPECT_TRUE((bool) wrap(root));
     EXPECT_FALSE((bool) wrap(root->GetParent()));
   });
@@ -65,23 +65,34 @@ TEST(Xpath, SelfAxis) {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
     node root(r);
-    self_iterator begin = root.self()->begin();
-    self_iterator end = root.self()->end();
+    const node::self_iterator begin = root.self()->begin();
+    const node::self_iterator end = root.self()->end();
     
     EXPECT_EQ(begin, begin);
     EXPECT_EQ(end, end);
     EXPECT_NE(begin, end);
-    self_iterator it = begin;
+    node::self_iterator it = begin;
     ++it;
     EXPECT_NE(it, begin);
     EXPECT_EQ(it, end);
     EXPECT_NE(begin, end);
-    self_iterator it2 = it++;
+    node::self_iterator it2 = it++;
     EXPECT_NE(it2, begin);
     EXPECT_EQ(it2, end);
     EXPECT_NE(it, begin);
     EXPECT_NE(it, end);
     EXPECT_NE(begin, end);
+
+#ifndef XPATH_OVF_ASSERT
+    {
+      auto it = begin;
+      --it; ++it;
+      EXPECT_EQ(it, begin);
+      auto i2 = end;
+      ++it2; --it2;
+      EXPECT_EQ(it2, end);
+    }
+#endif
   });
 }
 
@@ -89,31 +100,36 @@ TEST(Xpath, ChildAxis) {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
     node root(r);
-    child_iterator begin = root.child()->begin();
-    child_iterator end = root.child()->end();
+    node::child_iterator begin = root.child()->begin();
+    node::child_iterator end = root.child()->end();
     EXPECT_EQ(begin, begin);
     EXPECT_EQ(end, end);
     EXPECT_NE(begin, end);
 
-    child_iterator it = begin;
+    node::child_iterator it = begin;
     ++it; ++it;
     begin = (*it).child()->begin();
     end = (*it).child()->end();
     
     EXPECT_EQ((*begin).tag_name(), "head");
     int cnt1 = 0;
-    for (child_iterator it2 = begin; it2 != end; ++it2)
+    for (node::child_iterator it2 = begin; 
+         it2 != end; 
+         ++it2)
     {
       it = it2;
       ++cnt1;
     }
     EXPECT_EQ((*it).tag_name(), "body");
     int cnt2 = 0;
-    for (child_iterator it3 = end; it3 != begin; --it3)
+    for (node::child_iterator it3 = end; 
+         it3 != begin; 
+         --it3
+         )
       ++cnt2;
     EXPECT_EQ(cnt1, cnt2);
 
-    const child_iterator body = it;
+    const node::child_iterator body = it;
 
     it = begin;
     begin = it->child()->begin();
@@ -146,10 +162,10 @@ TEST(Xpath, ChildAxis) {
 TEST(Xpath, DescendantAxis) {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
-    descendant_iterator begin = 
+    node::descendant_iterator begin = 
       node(r).descendant()->begin();
     // TODO EXPECT_EQ(*begin, node(r));
-    descendant_iterator end =  
+    node::descendant_iterator end =  
       node(r).descendant()->end();
     EXPECT_NE(begin, end);
     auto doctype = *begin;
@@ -223,11 +239,14 @@ TEST(Xpath, DescendantAxis) {
 }
 
 TEST(Xpath, AttributeAxis) {
-  test_dom([](node root)
+  test_dom([](CefRefPtr<CefDOMNode> r)
   {
+    node root(r);
+
     auto i = root.descendant()->begin();
     ++i; ++i; 
     EXPECT_EQ(i->tag_name(), "html");
+    const auto html = i;
     EXPECT_EQ(i->n_attrs(), 3);
     {
       const int n_attrs = std::count_if(
@@ -249,14 +268,38 @@ TEST(Xpath, AttributeAxis) {
     std::cout << std::endl;
 #endif
 
+    ++i;
+    EXPECT_EQ(i->tag_name(), "head");
+    const auto head = i;
     {
-      ++i;
-      EXPECT_EQ(i->tag_name(), "head");
       EXPECT_EQ(i->n_attrs(), 0);
       const auto begin = i->attribute()->begin();
       const auto end = i->attribute()->end();
       EXPECT_EQ(begin, end);
     }
+
+#ifndef XPATH_OVF_ASSERT
+    {
+      const auto begin = html->attribute()->begin();
+      const auto end = html->attribute()->end();
+      auto it = begin;
+      --it; ++it;
+      EXPECT_EQ(begin, it);
+      auto it2 = end;
+      ++it2; --it2;
+      EXPECT_EQ(end, it2);
+    }
+    {
+      const auto begin = head->attribute()->begin();
+      const auto end = head->attribute()->end();
+      auto it = begin;
+      --it; ++it;
+      EXPECT_EQ(begin, it);
+      auto it2 = end;
+      ++it2; --it2;
+      EXPECT_EQ(end, it2);
+    }
+#endif
   });
 }
 
