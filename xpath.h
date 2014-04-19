@@ -83,7 +83,7 @@ class node
   );
 
 public:
-  enum class type { not_initialized, dom, attribute };
+  enum class type { not_valid, dom, attribute };
 
   template<xpath::axis axis>
   using iterator = node_iterators::iterator<NodePtr, axis>;
@@ -99,16 +99,12 @@ public:
   node(NodePtr dom_) : dom(dom_), the_type(type::dom)
   {
     SCHECK(dom);
-    assert((dom.get() == nullptr) == 
-      (the_type == type::not_initialized));
   }
 
   node(NodePtr dom_, int attr) 
     : dom(dom_), the_type(type::attribute), attr_idx(attr)
   {
     SCHECK(dom);
-    assert((dom.get() == nullptr) == 
-      (the_type == type::not_initialized));
   }
 
   node& operator=(const node& o) = default;
@@ -203,25 +199,25 @@ public:
 
   NodePtr operator->() 
   { 
-    SCHECK(the_type != type::not_initialized);
+    assert(is_valid());
     return dom; 
   }
 
   const NodePtr operator->() const 
   { 
-    SCHECK(the_type != type::not_initialized);
+    assert(is_valid());
     return dom; 
   }
 
   operator NodePtr()
   {
-    SCHECK(the_type != type::not_initialized);
+    assert(is_valid());
     return dom;
   }
 
   operator const NodePtr() const
   {
-    SCHECK(the_type != type::not_initialized);
+    assert(is_valid());
     return dom;
   }
 
@@ -281,9 +277,10 @@ public:
   }
 
 protected:
-  //! It is protected 
-  //! thus it's impossible declare "no node"
-  node() noexcept : dom(nullptr) {}
+  bool is_valid() const
+  {
+    return the_type != type::not_valid;
+  }
 
   NodePtr dom;
 
@@ -291,7 +288,7 @@ protected:
   //! expression or -1
   //int depth = -1;
 
-  type the_type = type::not_initialized;
+  type the_type = type::not_valid;
 
   //! the attribute sequence number
   int attr_idx = 0;
@@ -749,8 +746,6 @@ template<class NodePtr>
 std::shared_ptr<node<NodePtr>::axis_<axis::self>> 
 node<NodePtr>::self() const
 {
-  // SCHECK(the_type != type::not_initialized);
-  // already checked in the axis_::axis_
   return std::make_shared<axis_<xpath::axis::self>>(dom);
 }
 
@@ -813,8 +808,8 @@ operator<< (std::ostream& out, const node<NodePtr>& nd)
                  << '=' << p.second << '}';
     }
 
-    case node<NodePtr>::type::not_initialized:
-      return out << "(node not initialized)";
+    case node<NodePtr>::type::not_valid:
+      return out << "(node is not valid)";
 
     default:
       THROW_NOT_IMPLEMENTED;
