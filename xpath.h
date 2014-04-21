@@ -122,6 +122,8 @@ public:
   using attribute_iterator = iterator<axis::attribute>;
   using following_sibling_iterator = 
     iterator<axis::following_sibling>;
+  using preceding_sibling_iterator = 
+    iterator<axis::preceding_sibling>;
 
 
   node(const node& o) = default;
@@ -154,6 +156,9 @@ public:
 
   std::shared_ptr<axis_<xpath::axis::following_sibling>> 
   following_sibling() const;
+
+  std::shared_ptr<axis_<xpath::axis::preceding_sibling>> 
+  preceding_sibling() const;
 
   std::string tag_name() const
   {
@@ -345,6 +350,11 @@ public:
   using const_reference = const xpath::node<NodePtr>;
   using iterator_category = std::input_iterator_tag;
 
+  static_assert(
+    sizeof(size_type) == sizeof(difference_type),
+    "bad typedefs"
+  );
+
   //! Two iterators are equal if both are empty or points
   //! to the same node
   //! as CefDOMNode::IsSame returns and their attr_idx are
@@ -424,6 +434,13 @@ protected:
       empty(false)
   {}
 
+  //! Recalculates the child idx for the current node.
+  child_path_t::value_type current_child_idx_recalc() const
+  {
+    //FIXME
+    return child_path_t::uninitialized();
+  }
+
   bool go_first_child()
   {
     if (current.go_first_child()) {
@@ -436,7 +453,7 @@ protected:
   bool go_last_child()
   {
     if (current.go_last_child()) {
-      child_path.push_back(current_child_idx());
+      child_path.push_back(current_child_idx_recalc());
       return true;
     }
     return false;
@@ -473,7 +490,7 @@ protected:
   {
     current = context;
     // empty current path
-    child_path = child_path(child_path::uninitialized());
+    child_path = child_path(child_path_t::uninitialized());
     return go_first_child();
   }
 
@@ -481,7 +498,7 @@ protected:
   {
     current = context;
     // empty current path
-    child_path = child_path(child_path::uninitialized());
+    child_path = child_path(child_path_t::uninitialized());
     return go_last_child();
   }
 
@@ -489,7 +506,7 @@ protected:
   {
     current = context;
     // empty current path
-    child_path = child_path(child_path::uninitialized());
+    child_path = child_path(child_path_t::uninitialized());
     return true;
   }
 
@@ -590,8 +607,9 @@ public:
       assert(
         this->current->GetParent()->IsSame(this->context)
       );
-      if (!go_next_sibling()) {
-        const bool res = go_context_first_child(); //cycled
+      if (!this->go_next_sibling()) {
+        //cycled
+        const bool res = this->go_context_first_child(); 
         assert(res);
         ++(this->ovf);
       }
@@ -616,8 +634,9 @@ public:
       assert(
         this->current->GetParent()->IsSame(this->context)
       );
-      if (!go_prev_sibling()) {
-        const bool res = go_context_last_child(); // cycled
+      if (!this->go_prev_sibling()) {
+        // cycled
+        const bool res = this->go_context_last_child(); 
         assert(res);
         --(this->ovf);
       }
@@ -634,7 +653,8 @@ public:
   }
 
 protected:
-  explicit iterator(const node<NodePtr>& context_node) noexcept
+  explicit iterator(const node<NodePtr>& context_node) 
+    noexcept
     : iterator_base<NodePtr>(
         context_node, 
         context_node->GetFirstChild().get()
@@ -644,7 +664,8 @@ protected:
       )
   {}
 
-  iterator(const node<NodePtr>& context_node, end_t) noexcept
+  iterator(const node<NodePtr>& context_node, end_t) 
+    noexcept
     : iterator_base<NodePtr>(
         context_node, 
         context_node->GetFirstChild().get()
@@ -668,10 +689,10 @@ public:
 
   iterator& operator++() noexcept
   {
-    if (!go_next_sibling())
+    if (!this->go_next_sibling())
     {
       // cycle to the context node with ovf
-      go_context();
+      this->go_context();
       ++(this->ovf);
     }
     ovf_assert(this->ovf);
@@ -687,11 +708,15 @@ public:
 
   iterator& operator--() noexcept
   {
-    if (!go_prev_sibling())
+    if (!this->current->IsSame(this->context))
     {
-      // cycle to the context with ovf
-      go_context();
-      ++(this->ovf);
+      // it must be always after the context node
+      SCHECK(this->go_prev_sibling());
+    }
+    else {
+      // go to the last sibling
+      while(this->go_next_sibling()) ;
+      this->ovf++;
     }
     ovf_assert(this->ovf);
     return *this;
@@ -711,17 +736,93 @@ protected:
         context_node, 
         context_node,
         0,
-        child_path::uninitialized()
+        child_path_t::uninitialized()
       )
   {}
 
   iterator(const node<NodePtr>& context_node, end_t) 
     noexcept
-    : iterator(context_node)
+    : iterator_base<NodePtr>(
+        context_node, 
+        context_node,
+        context_node->GetNextSibling().get() ? +1 : 0,
+        child_path_t::uninitialized()
+      )
+  {}
+};
+
+// an xpath preceding_sibling axis. NB It is reversed axis.
+template<class NodePtr>
+class iterator<NodePtr, axis::preceding_sibling> 
+  : public iterator_base<NodePtr>
+{
+  friend class xpath::node<NodePtr>;
+
+public:
+  iterator() noexcept {}
+
+  iterator& operator++() noexcept
   {
-    auto tmp = *this;
-    ovf = tmp.go_next_sibling();
+    if (!this->go_prev_sibling())
+    {
+      // cycle to the context node with ovf
+      this->go_context();
+      ++(this->ovf);
+    }
+    ovf_assert(this->ovf);
+    return *this;
   }
+
+  iterator operator++(int) noexcept
+  {
+    iterator copy(*this);
+    ++(*this);
+    return copy;
+  }
+
+  iterator& operator--() noexcept
+  {
+    if (!this->current->IsSame(this->context))
+    {
+      // it must be always after the context node
+      SCHECK(this->go_next_sibling());
+    }
+    else {
+      // go to the last sibling
+      while(this->go_prev_sibling()) ;
+      this->ovf++;
+    }
+    ovf_assert(this->ovf);
+    return *this;
+  }
+
+  iterator operator--(int) noexcept
+  {
+    iterator copy(*this);
+    --(*this);
+    return copy;
+  }
+
+protected:
+  explicit iterator(const node<NodePtr>& context_node) 
+    noexcept
+    : iterator_base<NodePtr>(
+        context_node, 
+        context_node,
+        0,
+        child_path_t::uninitialized()
+      )
+  {}
+
+  iterator(const node<NodePtr>& context_node, end_t) 
+    noexcept
+    : iterator_base<NodePtr>(
+        context_node, 
+        context_node,
+        context_node->GetNextSibling().get() ? +1 : 0,
+        child_path_t::uninitialized()
+      )
+  {}
 };
 
 // an xpath descendant axis
@@ -743,12 +844,12 @@ public:
     }
 
     // go to the child first
-    if (go_first_child())
+    if (this->go_first_child())
     {
       LOG_TRACE(log, "FC");
     }
     // now try the next sibling
-    else if (go_next_sibling())
+    else if (this->go_next_sibling())
     {
       LOG_TRACE(log, "NS");
     }
@@ -758,15 +859,16 @@ public:
       {
         LOG_TRACE(log, 
           "[context = " << this->context.tag_name() 
-          << ", this->current = " << this->current.tag_name()
+          << ", this->current = " 
+          << this->current.tag_name()
           << ']');
-        if (go_parent())
+        if (this->go_parent())
         {
           LOG_TRACE(log, "^");
           if (this->current->IsSame(this->context))
             break; // go to end()
 
-          if (go_next_sibling())
+          if (this->go_next_sibling())
           {
             LOG_TRACE(log, 
               "PNS" << this->current.tag_name()
@@ -864,11 +966,13 @@ public:
   }
 
 protected:
-  explicit iterator(const node<NodePtr>& context_node) noexcept
+  explicit iterator(const node<NodePtr>& context_node) 
+    noexcept
     : iterator_base<NodePtr>(context_node, 0, 0)
   {}
 
-  iterator(const node<NodePtr>& context_node, end_t) noexcept
+  iterator(const node<NodePtr>& context_node, end_t) 
+    noexcept
     : iterator_base<NodePtr>(
         context_node, 
         // if no attrs begin == end
@@ -877,6 +981,84 @@ protected:
       )
   {}
 };
+
+//! Makes a RandomAccessIterator 
+//! from a BidirectionalIterator
+template<class Iterator>
+class random_access_adapter
+{
+public:
+  reference operator+=(difference_type n)
+  {
+    if (n > 0)
+      while (n--) --(*this);
+    else if (n < 0)
+      while (n++) ++(*this);
+    return *this;
+  }
+
+  reference operator-=(difference_type n)
+  {
+    return operator+=(-n);
+  }
+
+  value_type operator+(difference_type n) const
+  {
+    value_type copy(*this);
+    return copy += n;
+  }
+
+  value_type operator-(difference_type n) const
+  {
+    value_type copy(*this);
+    return copy -= n;
+  }
+};
+
+template<class It>
+random_access_iterator<It>::value_type
+operator+(
+  random_access_iterator<It>::difference_type n,
+  random_access_iterator<It>::value_type it
+)
+{
+  return it + n;
+}
+
+random_access_iterator<It>::difference_type
+operator-(
+  const random_access_iterator<It>& a,
+  const random_access_iterator<It>& b
+)
+{
+  difference_type cnt = 0;
+  decltype(a) x = a;
+  const auto old_ovf = x.ovf;
+  while (!x.ovf_equal(b)) {
+    if (x.ovf - old_ovf <= 1) {
+      // if context and iterator type is the same they
+      // must be ovf_equal after finite number of steps
+      THROW_PROGRAM_ERROR;
+    }
+    assert(x.ovf >= old_ovf);
+    ++x;
+    ++cnt;
+  }
+  if (x.ovf == b.ovf) 
+    return cnt;
+  else {
+    // calculate a full cycle
+    difference_type cnt2 = 0;
+    while (!x.ovf_equal(a)) {
+      assert(x.ovf >= b.ovf);
+      assert(x.ovf <= b.ovf + 1);
+      ++x;
+      ++cnt2;
+    }
+    const auto cycle = cnt + cnt2;
+    return cnt + cycle * (b.ovf - a.ovf - ?);
+  }
+}
 
 }
 
@@ -919,14 +1101,10 @@ public:
       );
   }
 
-  size_type size() const
+  typename iterator::size_type size() const
   {
-    const difference_type dist = end() - begin();
+    const auto dist = end() - begin();
     SCHECK(dist >= 0);
-    static_assert(
-      sizeof(size_type) >= sizeof(difference_type),
-      "bad typedefs"
-    );
     return dist;
   }
 
@@ -972,6 +1150,16 @@ std::shared_ptr<node<NodePtr>
 {
   return std::make_shared
     <axis_<xpath::axis::following_sibling>> (dom);
+}
+
+template<class NodePtr>
+std::shared_ptr<node<NodePtr>
+::axis_<axis::preceding_sibling>> node<NodePtr>
+//
+::preceding_sibling() const
+{
+  return std::make_shared
+    <axis_<xpath::axis::preceding_sibling>> (dom);
 }
 
 // Must be in the namespace for Koeing lookup

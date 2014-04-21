@@ -102,17 +102,17 @@ TEST(Xpath, SiblingAxes) {
     node root(r);
 
     // a root node has no siblings
-    EXPECT_EQ(0, root.following_sibling().size());
-    EXPECT_EQ(0, root.preceding_sibling().size());
+    EXPECT_EQ(0, root.following_sibling()->size());
+    EXPECT_EQ(0, root.preceding_sibling()->size());
 
     auto head = root.descendant()->begin() + 3; //FIXME 3
     EXPECT_EQ("head", head->tag_name());
-    EXPECT_EQ(1, head->following_sibling().size());
-    EXPECT_EQ(0, head->preceding_sibling().size());
+    EXPECT_EQ(1, head->following_sibling()->size());
+    EXPECT_EQ(0, head->preceding_sibling()->size());
     auto body = head->following_sibling()->begin();
     EXPECT_EQ("body", body->tag_name());
-    EXPECT_EQ(0, head->following_sibling().size());
-    EXPECT_EQ(1, head->preceding_sibling().size());
+    EXPECT_EQ(0, head->following_sibling()->size());
+    EXPECT_EQ(1, head->preceding_sibling()->size());
     auto meta = head->child()->begin();
     EXPECT_EQ("meta", meta->tag_name());
 #if 1
@@ -124,7 +124,7 @@ TEST(Xpath, SiblingAxes) {
       [](const node& n) { return n->IsElement(); }
     );
 #endif
-    //EXPECT_EQ(?, meta->following_sibling().size());
+    //EXPECT_EQ(?, meta->following_sibling()->size());
 
     auto last_script = head->child()->end() - 1;
     EXPECT_EQ("script", last_script->tag_name();
