@@ -17,7 +17,8 @@
 #include <algorithm>
 #include <cctype>
 #include <assert.h>
-#include <stack>
+#include <list>
+#include <utility>
 #include "include/cef_dom.h"
 #include "SCheck.h"
 
@@ -32,6 +33,13 @@
 
 namespace xpath 
 {
+
+//! The special error value to mark uninitialized data.
+template<class Int>
+constexpr static Int uninitialized(Int)
+{
+  return std::numeric_limits<Int>::min();
+}
 
 //! xpath axes
 enum class axis {
@@ -53,18 +61,27 @@ enum class axis {
 template<class NodePtr>
 class node;
 
+using node_difference_type = ptrdiff_t;
+
+class child_path_t : public std::list<node_difference_type>
+{
+public:
+  constexpr static value_type uninitialized()
+  {
+    return xpath::uninitialized<value_type>(0);
+  }
+
+  child_path_t(node_difference_type idx)
+  {
+    push_back(idx);
+  }
+};
+
 //! The namespace for internal usage by the node class only
 namespace node_iterators {
 
 //! The end iterator marker for constructor
 struct end_t {};
-
-//! The special error value to mark uninitialized data.
-template<class Int>
-constexpr static Int uninitialized(Int)
-{
-  return std::numeric_limits<Int>::min();
-}
 
 template<class NodePtr>
 class iterator_base;
@@ -319,7 +336,7 @@ template<class NodePtr>
 class iterator_base
 {
 public:
-  using difference_type = ptrdiff_t;
+  using difference_type = xpath::node_difference_type;
   using size_type = size_t;
   using value_type = xpath::node<NodePtr>;
   using pointer = xpath::node<NodePtr>*;
@@ -384,11 +401,11 @@ protected:
     const node<NodePtr>& context_node,
     const node<NodePtr>& current_node,
     difference_type overflow,
-    difference_type child_idx_
+    difference_type child_idx
   ) noexcept
     : context(context_node), 
       current(current_node),
-      child_idx(child_idx_),
+      child_path(child_idx),
       ovf(overflow),
       empty(false)
   {}
@@ -398,29 +415,19 @@ protected:
     const node<NodePtr>& context_node,
     difference_type overflow,
     int attr_idx,
-    difference_type child_idx_
+    difference_type child_idx
   ) noexcept
     : context(context_node), 
       current(context_node, attr_idx),
-      child_idx(child_idx_),
+      child_path(child_idx),
       ovf(overflow),
       empty(false)
   {}
 
-  //! Set the child_idx, if idx < 0 count the real
-  //! (positive) index. Always returns true.
-  bool set_child_idx(difference_type idx)
-  {
-//FIXME    if (idx < 0)
-    child_idx = idx;
-    return true;
-  }
-
   bool go_first_child()
   {
     if (current.go_first_child()) {
-      underlying_child_idx.push(child_idx);
-      set_child_idx(0);
+      child_path.push_back(0);
       return true;
     }
     return false;
@@ -429,8 +436,7 @@ protected:
   bool go_last_child()
   {
     if (current.go_last_child()) {
-      underlying_child_idx.push(child_idx);
-      set_child_idx(-1);
+      child_path.push_back(current_child_idx());
       return true;
     }
     return false;
@@ -439,13 +445,13 @@ protected:
   bool go_next_sibling()
   {
     return current.go_next_sibling()
-      && set_child_idx(child_idx + 1);
+      && (++(child_path.back()), true);
   }
 
   bool go_prev_sibling()
   {
     return current.go_prev_sibling()
-      && set_child_idx(child_idx - 1);
+      && (--(child_path.back()), true);
   }
 
   //! reloads itself with the parent if any or
@@ -453,13 +459,12 @@ protected:
   bool go_parent()
   {
     if (current.go_parent()) {
-      SCHECK(!underlying_child_idx.empty());
-      set_child_idx(underlying_child_idx.top());
-      underlying_child_idx.pop();
+      SCHECK(child_path.size() >= 2);
+      child_path.pop_back();
       return true;
     }
     else {
-      assert(underlying_child_idx.empty());
+      assert(child_path.size() == 1);
       return false;
     }
   }
@@ -468,8 +473,7 @@ protected:
   {
     current = context;
     // empty current path
-    underlying_child_idx = std::stack<difference_type>();
-    child_idx = uninitialized(child_idx);
+    child_path = child_path(child_path::uninitialized());
     return go_first_child();
   }
 
@@ -477,16 +481,15 @@ protected:
   {
     current = context;
     // empty current path
-    underlying_child_idx = std::stack<difference_type>();
-    child_idx = uninitialized(child_idx);
+    child_path = child_path(child_path::uninitialized());
     return go_last_child();
   }
 
   bool go_context()
   {
     current = context;
-    //FIXME calc child_idx
-    child_idx = uninitialized(child_idx);
+    // empty current path
+    child_path = child_path(child_path::uninitialized());
     return true;
   }
 
@@ -497,12 +500,13 @@ protected:
 
   node<NodePtr> current;
 
-  //! it is the 0-based number in the child list, 
-  //! set by go_xxx methods
-  difference_type child_idx = uninitialized(child_idx);
+  //! it 
+//  difference_type child_idx = uninitialized(child_idx);
 
-  //! stores child indexes when go down
-  std::stack<difference_type> underlying_child_idx;
+  //! stores child indexes when go down. child index is
+  //! the 0-based number in the child list,
+  //! set by go_xxx methods
+  child_path_t child_path;
 
   //! The end()+N (N>=0) iterator points to the same
   //! this->current as end()-1.
@@ -707,7 +711,7 @@ protected:
         context_node, 
         context_node,
         0,
-        uninitialized(child_idx) //FIXME calc child
+        child_path::uninitialized()
       )
   {}
 
