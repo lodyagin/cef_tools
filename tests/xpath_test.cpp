@@ -61,6 +61,29 @@ TEST(XpathBasic, Wrap) {
   });
 }
 
+template<class It>
+void distance_test(
+  It begin, 
+  It end,
+  typename It::difference_type l
+)
+{
+    // distance
+    EXPECT_EQ(0, begin - begin);
+    EXPECT_EQ(0, end - end);
+    EXPECT_EQ(l, end - begin);
+    EXPECT_EQ(-l, begin - end);
+    EXPECT_EQ(l, (end + 1) - (begin + 1));
+    EXPECT_EQ(1-l, begin + 1 - end);
+    EXPECT_EQ(1, begin + 1 - begin);
+    EXPECT_EQ(-1, begin - 1 - begin);
+    EXPECT_EQ(1, end + 1 - end);
+    EXPECT_EQ(-1, end - 1 - end);
+    EXPECT_EQ(l-1, end - 1 - begin);
+    EXPECT_EQ(l-2, (end + 1) - (begin + 3));
+    EXPECT_EQ(l-2, end - 1 - (begin + 1));
+}
+
 TEST(Xpath, SelfAxis) {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
@@ -83,20 +106,7 @@ TEST(Xpath, SelfAxis) {
     EXPECT_NE(it, end);
     EXPECT_NE(begin, end);
 
-    // distance
-    EXPECT_EQ(0, begin - begin);
-    EXPECT_EQ(0, end - end);
-    EXPECT_EQ(1, end - begin);
-    EXPECT_EQ(-1, begin - end);
-    EXPECT_EQ(1, (end + 1) - (begin + 1));
-    EXPECT_EQ(0, begin + 1 - end);
-    EXPECT_EQ(1, begin + 1 - begin);
-    EXPECT_EQ(-1, begin - 1 - begin);
-    EXPECT_EQ(1, end + 1 - end);
-    EXPECT_EQ(-1, end - 1 - end);
-    EXPECT_EQ(0, end - 1 - begin);
-    EXPECT_EQ(-1, (end + 1) - (begin + 3));
-    EXPECT_EQ(-1, end - 1 - (begin + 1));
+    distance_test(begin, end, 1);
 
 #ifndef XPATH_OVF_ASSERT
     {
@@ -141,6 +151,12 @@ TEST(Xpath, SiblingAxes) {
     auto last_script = meta->following_sibling()->end() - 2;
     EXPECT_EQ("script", last_script->tag_name());
     EXPECT_EQ(22, last_script->preceding_sibling()->size());
+
+    distance_test(
+      meta->following_sibling()->begin(),
+      meta->following_sibling()->end(),
+      23
+    );
   });
 }
 
@@ -160,6 +176,7 @@ TEST(Xpath, ChildAxis) {
     end = (*it).child()->end();
     
     EXPECT_EQ((*begin).tag_name(), "head");
+    auto head = begin;
     int cnt1 = 0;
     for (node::child_iterator it2 = begin; 
          it2 != end; 
@@ -204,6 +221,12 @@ TEST(Xpath, ChildAxis) {
       std::ostream_iterator<node>(std::cout, "\n")
     );
 #endif
+
+    distance_test(
+      head->child()->begin(), 
+      head->child()->end(),
+      24
+    );
   });
 }
 
@@ -218,12 +241,12 @@ TEST(Xpath, DescendantAxis) {
     EXPECT_NE(begin, end);
     auto doctype = *begin;
 
-#if 0
+    std::cout << "1" << std::endl;
+#if 1
     std::copy(
       begin, 
       end, 
       std::ostream_iterator<node>(std::cout, "\n")
-//      [](const node& n) { return n->IsElement(); }
     );
 #endif
 
@@ -233,6 +256,7 @@ TEST(Xpath, DescendantAxis) {
       [](const node& n) { return n->IsElement(); }
     );
     EXPECT_EQ(n_tags, 67);
+    std::cout << "2" << std::endl;
     {
       ++begin; // at <!-- ...>
       const int n_tags2 = std::count_if(
@@ -243,6 +267,7 @@ TEST(Xpath, DescendantAxis) {
       EXPECT_EQ(n_tags2, 0);
     }
 
+    std::cout << "3" << std::endl;
     ++begin; ++begin;
     auto meta = begin; ++meta; // points to 1st meta tag
     {
@@ -259,6 +284,7 @@ TEST(Xpath, DescendantAxis) {
 #endif
       begin = new_begin;
   
+    std::cout << "4" << std::endl;
 #if 0
       // out only tags
       std::copy_if(
@@ -277,12 +303,16 @@ TEST(Xpath, DescendantAxis) {
       EXPECT_EQ(n_tags3, 12);
     }
     
+    std::cout << "5" << std::endl;
     // empty axis check
     // empty tag
     EXPECT_EQ(
       meta->descendant()->begin(),
       meta->descendant()->end()
     );
+
+    std::cout << "6" << std::endl;
+    distance_test(begin, end, 1); // FIXME 1
   });
 }
 
@@ -348,6 +378,12 @@ TEST(Xpath, AttributeAxis) {
       EXPECT_EQ(end, it2);
     }
 #endif
+
+    distance_test(
+      html->attribute()->begin(),
+      html->attribute()->end(),
+      3
+    );
   });
 }
 
