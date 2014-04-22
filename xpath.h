@@ -89,6 +89,9 @@ class iterator_base;
 template<class NodePtr, xpath::axis axis> 
 class iterator;
 
+template<class Iterator>
+class random_access_adapter;
+
 }
 
 template<class NodePtr>
@@ -114,7 +117,9 @@ public:
   enum class type { not_valid, dom, attribute };
 
   template<xpath::axis axis>
-  using iterator = node_iterators::iterator<NodePtr, axis>;
+  using iterator = node_iterators::random_access_adapter<
+    node_iterators::iterator<NodePtr, axis>
+  >;
 
   using self_iterator = iterator<axis::self>;
   using child_iterator = iterator<axis::child>;
@@ -341,6 +346,8 @@ template<class NodePtr>
 class iterator_base
 {
 public:
+  using node_ptr_type = NodePtr;
+
   using difference_type = xpath::node_difference_type;
   using size_type = size_t;
   using value_type = xpath::node<NodePtr>;
@@ -363,6 +370,7 @@ public:
   //! nodes or ever iterator types.
   bool operator==(const iterator_base& o) const noexcept
   {
+    SCHECK(context->IsSame(o.context));
     return (empty && o.empty)
       || (ovf == o.ovf 
           && current.attr_idx == o.current.attr_idx
@@ -434,12 +442,14 @@ protected:
       empty(false)
   {}
 
+#if 0
   //! Recalculates the child idx for the current node.
   child_path_t::value_type current_child_idx_recalc() const
   {
     //FIXME
     return child_path_t::uninitialized();
   }
+#endif
 
   bool go_first_child()
   {
@@ -453,7 +463,9 @@ protected:
   bool go_last_child()
   {
     if (current.go_last_child()) {
-      child_path.push_back(current_child_idx_recalc());
+      child_path.push_back(
+        current.preceding_sibling()->size()
+      );
       return true;
     }
     return false;
@@ -490,7 +502,7 @@ protected:
   {
     current = context;
     // empty current path
-    child_path = child_path(child_path_t::uninitialized());
+    child_path = child_path_t::uninitialized();
     return go_first_child();
   }
 
@@ -498,7 +510,7 @@ protected:
   {
     current = context;
     // empty current path
-    child_path = child_path(child_path_t::uninitialized());
+    child_path = child_path_t::uninitialized();
     return go_last_child();
   }
 
@@ -506,8 +518,19 @@ protected:
   {
     current = context;
     // empty current path
-    child_path = child_path(child_path_t::uninitialized());
+    child_path = child_path_t::uninitialized();
     return true;
+  }
+
+  //! Two iterators are ovf_equal if they points to the
+  //! same node and/or attribute despite of ovf values.
+  bool ovf_equal(const iterator_base& o) const noexcept
+  {
+    assert(!empty);
+    assert(!o.empty);
+    assert(context->IsSame(o.context));
+    return current.attr_idx == o.current.attr_idx
+      && current->IsSame(o.current);
   }
 
   //! The context node is not used by some iterators (e.g.,
@@ -543,7 +566,7 @@ template<class NodePtr>
 class iterator<NodePtr, axis::self> 
   : public iterator_base<NodePtr>
 {
-  friend class xpath::node<NodePtr>;
+//  friend class xpath::node<NodePtr>;
   friend class iterator<NodePtr, axis::descendant>;
 
 public:
@@ -578,12 +601,24 @@ public:
   }
 
 protected:
-  explicit iterator(const node<NodePtr>& context_node) noexcept
-    : iterator_base<NodePtr>(context_node, context_node, 0)
+  explicit iterator(const node<NodePtr>& context_node) 
+    noexcept
+    : iterator_base<NodePtr>(
+        context_node, 
+        context_node, 
+        0,
+        child_path_t::uninitialized()
+      )
   {}
 
-  iterator(const node<NodePtr>& context_node, end_t) noexcept
-    : iterator_base<NodePtr>(context_node, context_node, +1)
+  iterator(const node<NodePtr>& context_node, end_t) 
+    noexcept
+    : iterator_base<NodePtr>(
+        context_node, 
+        context_node, 
+        +1,
+        child_path_t::uninitialized()
+      )
   {}
 };
 
@@ -592,7 +627,6 @@ template<class NodePtr>
 class iterator<NodePtr, axis::child> 
   : public iterator_base<NodePtr>
 {
-  friend class xpath::node<NodePtr>;
   friend class iterator<NodePtr, axis::descendant>;
 
 public:
@@ -660,7 +694,9 @@ protected:
         context_node->GetFirstChild().get()
           ? node<NodePtr>(context_node->GetFirstChild())
           : context_node,
-        0
+        0,
+        context_node->GetFirstChild().get() 
+          ? 0 : child_path_t::uninitialized()
       )
   {}
 
@@ -672,7 +708,9 @@ protected:
           ? node<NodePtr>(context_node->GetFirstChild())
           : context_node,
         // begin == end for an empty axis
-        context_node->GetFirstChild().get() ? +1 : 0
+        context_node->GetFirstChild().get() ? +1 : 0,
+        context_node->GetFirstChild().get() 
+          ? 0 : child_path_t::uninitialized()
       )
   {}
 };
@@ -682,7 +720,7 @@ template<class NodePtr>
 class iterator<NodePtr, axis::following_sibling> 
   : public iterator_base<NodePtr>
 {
-  friend class xpath::node<NodePtr>;
+//  friend class xpath::node<NodePtr>;
 
 public:
   iterator() noexcept {}
@@ -691,8 +729,9 @@ public:
   {
     if (!this->go_next_sibling())
     {
-      // cycle to the context node with ovf
+      // cycle to the context node + 1 with ovf
       this->go_context();
+      this->go_next_sibling();
       ++(this->ovf);
     }
     ovf_assert(this->ovf);
@@ -708,15 +747,16 @@ public:
 
   iterator& operator--() noexcept
   {
-    if (!this->current->IsSame(this->context))
-    {
-      // it must be always after the context node
-      SCHECK(this->go_prev_sibling());
-    }
-    else {
+    // it must be always after the context node
+    SCHECK(this->go_prev_sibling());
+    if (this->current->IsSame(this->context)) {
       // go to the last sibling
-      while(this->go_next_sibling()) ;
-      this->ovf++;
+      while(this->go_next_sibling()) {
+        LOG_TRACE(log, 
+          "following_sibling: go_next_sibling()"
+        );
+      }
+      --(this->ovf);
     }
     ovf_assert(this->ovf);
     return *this;
@@ -734,7 +774,9 @@ protected:
     noexcept
     : iterator_base<NodePtr>(
         context_node, 
-        context_node,
+        context_node->GetNextSibling().get() 
+          ? node<NodePtr>(context_node->GetNextSibling())
+          : context_node,
         0,
         child_path_t::uninitialized()
       )
@@ -744,11 +786,16 @@ protected:
     noexcept
     : iterator_base<NodePtr>(
         context_node, 
-        context_node,
+        context_node->GetNextSibling().get() 
+          ? node<NodePtr>(context_node->GetNextSibling())
+          : context_node,
         context_node->GetNextSibling().get() ? +1 : 0,
         child_path_t::uninitialized()
       )
   {}
+
+private:
+  using log = curr::Logger<iterator>;
 };
 
 // an xpath preceding_sibling axis. NB It is reversed axis.
@@ -756,7 +803,7 @@ template<class NodePtr>
 class iterator<NodePtr, axis::preceding_sibling> 
   : public iterator_base<NodePtr>
 {
-  friend class xpath::node<NodePtr>;
+//  friend class xpath::node<NodePtr>;
 
 public:
   iterator() noexcept {}
@@ -765,8 +812,9 @@ public:
   {
     if (!this->go_prev_sibling())
     {
-      // cycle to the context node with ovf
+      // cycle to the context node - 1 with ovf
       this->go_context();
+      this->go_prev_sibling();
       ++(this->ovf);
     }
     ovf_assert(this->ovf);
@@ -782,15 +830,13 @@ public:
 
   iterator& operator--() noexcept
   {
-    if (!this->current->IsSame(this->context))
-    {
-      // it must be always after the context node
-      SCHECK(this->go_next_sibling());
-    }
-    else {
-      // go to the last sibling
-      while(this->go_prev_sibling()) ;
-      this->ovf++;
+    // it must be always before the context node
+    SCHECK(this->go_next_sibling());
+    if (this->current->IsSame(this->context)) {
+      // go to the first sibling
+      while(this->go_prev_sibling()) 
+        ;
+      --(this->ovf);
     }
     ovf_assert(this->ovf);
     return *this;
@@ -808,7 +854,11 @@ protected:
     noexcept
     : iterator_base<NodePtr>(
         context_node, 
-        context_node,
+        context_node->GetPreviousSibling().get() 
+          ? node<NodePtr>(
+              context_node->GetPreviousSibling()
+            )
+          : context_node,
         0,
         child_path_t::uninitialized()
       )
@@ -818,8 +868,12 @@ protected:
     noexcept
     : iterator_base<NodePtr>(
         context_node, 
-        context_node,
-        context_node->GetNextSibling().get() ? +1 : 0,
+        context_node->GetPreviousSibling().get() 
+          ? node<NodePtr>(
+              context_node->GetPreviousSibling()
+            )
+          : context_node,
+        context_node->GetPreviousSibling().get() ? +1 : 0,
         child_path_t::uninitialized()
       )
   {}
@@ -830,7 +884,7 @@ template<class NodePtr>
 class iterator<NodePtr, axis::descendant> 
   : public iterator_base<NodePtr>
 {
-  friend class xpath::node<NodePtr>;
+//  friend class xpath::node<NodePtr>;
 
 public:
   iterator() noexcept {}
@@ -878,6 +932,8 @@ public:
         } 
         else break;
       }
+      if (this->current->IsSame(this->context))
+        this->go_first_child(); //cycled
     }
 
     return *this;
@@ -890,28 +946,49 @@ public:
     return copy;
   }
 
+  iterator& operator--()
+  {
+    THROW_NOT_IMPLEMENTED;
+  }
+
+  iterator operator--(int)
+  {
+    iterator copy(*this);
+    --(*this);
+    return copy;
+  }
+
 protected:
-  explicit iterator(const node<NodePtr>& context_node) noexcept
+  explicit iterator(const node<NodePtr>& context_node) 
+    noexcept
     : iterator_base<NodePtr>(
         context_node, 
         context_node->GetFirstChild().get()
           ? node<NodePtr>(context_node->GetFirstChild())
           : context_node,
-        context_node->GetFirstChild().get() == nullptr
+        0,
+        context_node->GetFirstChild().get() 
+          ? 0 : child_path_t::uninitialized()
       )
   {}
 
-  iterator(const node<NodePtr>& context_node, end_t) noexcept
+  iterator(const node<NodePtr>& context_node, end_t) 
+    noexcept
     : iterator_base<NodePtr>(
         context_node, 
-        context_node,
+        context_node->GetFirstChild().get()
+          ? node<NodePtr>(context_node->GetFirstChild())
+          : context_node,
         // begin == end for an empty axis
-        context_node->GetFirstChild().get() ? 0 : +1
+        context_node->GetFirstChild().get() ? +1 : 0,
+        context_node->GetFirstChild().get() 
+          ? 0 : child_path_t::uninitialized()
       )
   {}
 
 private:
-  typedef curr::Logger<iterator<NodePtr, axis::descendant>> log;
+  typedef curr::Logger<iterator<NodePtr, axis::descendant>>
+    log;
 };
 
 // an xpath attribute axis
@@ -919,7 +996,7 @@ template<class NodePtr>
 class iterator<NodePtr, axis::attribute> 
   : public iterator_base<NodePtr>
 {
-  friend class xpath::node<NodePtr>;
+//  friend class xpath::node<NodePtr>;
 
 public:
   iterator() noexcept {}
@@ -968,7 +1045,12 @@ public:
 protected:
   explicit iterator(const node<NodePtr>& context_node) 
     noexcept
-    : iterator_base<NodePtr>(context_node, 0, 0)
+    : iterator_base<NodePtr>(
+        context_node, 
+        0, 
+        0,
+        child_path_t::uninitialized()
+        )
   {}
 
   iterator(const node<NodePtr>& context_node, end_t) 
@@ -977,65 +1059,126 @@ protected:
         context_node, 
         // if no attrs begin == end
         context_node.n_attrs() == 0 ? 0 : +1,
-        0 //it is cycled
+        0, //it is cycled
+        child_path_t::uninitialized()
       )
   {}
 };
 
+template<class It>
+typename random_access_adapter<It>::difference_type
+operator-(
+  const random_access_adapter<It>& a,
+  const random_access_adapter<It>& b
+);
+
 //! Makes a RandomAccessIterator 
 //! from a BidirectionalIterator
 template<class Iterator>
-class random_access_adapter
+class random_access_adapter : public Iterator
 {
+  friend class xpath::node
+    <typename Iterator::node_ptr_type>;
+
+  friend 
+  typename random_access_adapter<Iterator>::difference_type
+  operator-<Iterator>(
+    const random_access_adapter<Iterator>& a,
+    const random_access_adapter<Iterator>& b
+  );
+
 public:
-  reference operator+=(difference_type n)
+  using typename Iterator::difference_type;
+  using typename Iterator::size_type;
+  using typename Iterator::value_type;
+  using typename Iterator::pointer;
+  using typename Iterator::const_pointer;
+  using typename Iterator::reference;
+  using typename Iterator::const_reference;
+  using iterator_category =std::random_access_iterator_tag;
+
+  using Iterator::Iterator;
+
+  random_access_adapter& operator++()
   {
-    if (n > 0)
-      while (n--) --(*this);
-    else if (n < 0)
-      while (n++) ++(*this);
+    Iterator::operator++();
     return *this;
   }
 
-  reference operator-=(difference_type n)
+  random_access_adapter operator++(int)
+  {
+    random_access_adapter copy(*this);
+    ++(*this);
+    return copy;
+  }
+
+  random_access_adapter& operator--()
+  {
+    Iterator::operator--();
+    return *this;
+  }
+
+  random_access_adapter operator--(int)
+  {
+    random_access_adapter copy(*this);
+    --(*this);
+    return copy;
+  }
+
+  random_access_adapter& operator+=(difference_type n)
+  {
+    if (n > 0)
+      while (n--) ++(*this);
+    else if (n < 0)
+      while (n++) --(*this);
+    return *this;
+  }
+
+  random_access_adapter& operator-=(difference_type n)
   {
     return operator+=(-n);
   }
 
-  value_type operator+(difference_type n) const
+  random_access_adapter operator+(difference_type n) const
   {
-    value_type copy(*this);
+    random_access_adapter copy(*this);
     return copy += n;
   }
 
-  value_type operator-(difference_type n) const
+  random_access_adapter operator-(difference_type n) const
   {
-    value_type copy(*this);
+    random_access_adapter copy(*this);
     return copy -= n;
   }
 };
 
 template<class It>
-random_access_iterator<It>::value_type
+typename random_access_adapter<It>::value_type
 operator+(
-  random_access_iterator<It>::difference_type n,
-  random_access_iterator<It>::value_type it
+  typename random_access_adapter<It>::difference_type n,
+  typename random_access_adapter<It>::value_type it
 )
 {
   return it + n;
 }
 
-random_access_iterator<It>::difference_type
+template<class It>
+typename random_access_adapter<It>::difference_type
 operator-(
-  const random_access_iterator<It>& a,
-  const random_access_iterator<It>& b
+  const random_access_adapter<It>& a,
+  const random_access_adapter<It>& b
 )
 {
-  difference_type cnt = 0;
-  decltype(a) x = a;
+  // TODO specialized exceptions
+  SCHECK(!a.empty);
+  SCHECK(!b.empty);
+  SCHECK(a.context->IsSame(b.context));
+
+  typename It::difference_type cnt = 0;
+  random_access_adapter<It> x = a;
   const auto old_ovf = x.ovf;
   while (!x.ovf_equal(b)) {
-    if (x.ovf - old_ovf <= 1) {
+    if (x.ovf - old_ovf > 1) {
       // if context and iterator type is the same they
       // must be ovf_equal after finite number of steps
       THROW_PROGRAM_ERROR;
@@ -1044,36 +1187,26 @@ operator-(
     ++x;
     ++cnt;
   }
+  //LOG_TRACE(log, "cnt = " << cnt);
+  const auto ovf = x.ovf - old_ovf;
+  //LOG_TRACE(log, "ovf = " << ovf);
   if (x.ovf == b.ovf) 
-    return cnt;
+    return - cnt;
   else {
     // calculate a full cycle
-    difference_type cnt2 = 0;
-    while (!x.ovf_equal(a)) {
-      assert(x.ovf >= b.ovf);
-      assert(x.ovf <= b.ovf + 1);
+    typename It::difference_type cnt2 = 0;
+
+    do {
       ++x;
       ++cnt2;
-    }
+    } while (!x.ovf_equal(a));
+
     const auto cycle = cnt + cnt2;
-    return cnt + cycle * (b.ovf - a.ovf - ?);
+    return - (cnt + cycle * (b.ovf - a.ovf - ovf));
   }
 }
 
 }
-
-#if 0
-struct select
-{
-  select(
-    const std::string& tag_,
-    const CefRefPtr<CefDOMNode>& dom_
-  );
-      
-  std::string tag;
-  node<NodePtr> context_node;
-};
-#endif
 
 // the implementation
 
@@ -1101,7 +1234,7 @@ public:
       );
   }
 
-  typename iterator::size_type size() const
+  typename iterator::size_type size() //const
   {
     const auto dist = end() - begin();
     SCHECK(dist >= 0);

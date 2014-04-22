@@ -83,6 +83,21 @@ TEST(Xpath, SelfAxis) {
     EXPECT_NE(it, end);
     EXPECT_NE(begin, end);
 
+    // distance
+    EXPECT_EQ(0, begin - begin);
+    EXPECT_EQ(0, end - end);
+    EXPECT_EQ(1, end - begin);
+    EXPECT_EQ(-1, begin - end);
+    EXPECT_EQ(1, (end + 1) - (begin + 1));
+    EXPECT_EQ(0, begin + 1 - end);
+    EXPECT_EQ(1, begin + 1 - begin);
+    EXPECT_EQ(-1, begin - 1 - begin);
+    EXPECT_EQ(1, end + 1 - end);
+    EXPECT_EQ(-1, end - 1 - end);
+    EXPECT_EQ(0, end - 1 - begin);
+    EXPECT_EQ(-1, (end + 1) - (begin + 3));
+    EXPECT_EQ(-1, end - 1 - (begin + 1));
+
 #ifndef XPATH_OVF_ASSERT
     {
       auto it = begin;
@@ -105,30 +120,27 @@ TEST(Xpath, SiblingAxes) {
     EXPECT_EQ(0, root.following_sibling()->size());
     EXPECT_EQ(0, root.preceding_sibling()->size());
 
-    auto head = root.descendant()->begin() + 3; //FIXME 3
+    auto head = root.descendant()->begin() + 3;
     EXPECT_EQ("head", head->tag_name());
-    EXPECT_EQ(1, head->following_sibling()->size());
+    EXPECT_EQ(2, head->following_sibling()->size());
     EXPECT_EQ(0, head->preceding_sibling()->size());
-    auto body = head->following_sibling()->begin();
+    auto body = head->following_sibling()->begin() + 1;
     EXPECT_EQ("body", body->tag_name());
-    EXPECT_EQ(0, head->following_sibling()->size());
-    EXPECT_EQ(1, head->preceding_sibling()->size());
+    EXPECT_EQ(0, body->following_sibling()->size());
+    EXPECT_EQ(2, body->preceding_sibling()->size());
     auto meta = head->child()->begin();
     EXPECT_EQ("meta", meta->tag_name());
-#if 1
-    // out only tags
-    std::copy_if(
-      meta->following_sibling()->begin(), 
+#if 0
+    std::copy(
+      meta->following_sibling()->begin(),
       meta->following_sibling()->end(), 
-      std::ostream_iterator<node>(std::cout, "\n"),
-      [](const node& n) { return n->IsElement(); }
+      std::ostream_iterator<node>(std::cout, "\n")
     );
 #endif
-    //EXPECT_EQ(?, meta->following_sibling()->size());
-
-    auto last_script = head->child()->end() - 1;
-    EXPECT_EQ("script", last_script->tag_name();
-    //EXPECT_EQ(?, last_script->preceding_sibling()->size());
+    EXPECT_EQ(23, meta->following_sibling()->size());
+    auto last_script = meta->following_sibling()->end() - 2;
+    EXPECT_EQ("script", last_script->tag_name());
+    EXPECT_EQ(22, last_script->preceding_sibling()->size());
   });
 }
 
