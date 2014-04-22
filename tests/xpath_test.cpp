@@ -108,6 +108,8 @@ TEST(Xpath, SelfAxis) {
 
     distance_test(begin, end, 1);
 
+    EXPECT_EQ(".", (std::string) begin.path());
+
 #ifndef XPATH_OVF_ASSERT
     {
       auto it = begin;
@@ -132,10 +134,12 @@ TEST(Xpath, SiblingAxes) {
 
     auto head = root.descendant()->begin() + 3;
     EXPECT_EQ("head", head->tag_name());
+    EXPECT_EQ("2/0", (std::string) head.path());
     EXPECT_EQ(2, head->following_sibling()->size());
     EXPECT_EQ(0, head->preceding_sibling()->size());
     auto body = head->following_sibling()->begin() + 1;
     EXPECT_EQ("body", body->tag_name());
+    EXPECT_EQ(".", (std::string) body.path());
     EXPECT_EQ(0, body->following_sibling()->size());
     EXPECT_EQ(2, body->preceding_sibling()->size());
     auto meta = head->child()->begin();
@@ -240,6 +244,7 @@ TEST(Xpath, DescendantAxis) {
       node(r).descendant()->end();
     EXPECT_NE(begin, end);
     auto doctype = *begin;
+    EXPECT_EQ("0", (std::string) begin.path());
 #if 0
     std::copy(
       begin, 
@@ -265,6 +270,7 @@ TEST(Xpath, DescendantAxis) {
 
     ++begin; ++begin;
     auto meta = begin; ++meta; // points to 1st meta tag
+    EXPECT_EQ("2/0/0", (std::string) meta.path());
     {
       EXPECT_EQ(begin->tag_name(), "head");
       end = begin->descendant()->end();
@@ -341,7 +347,8 @@ TEST(Xpath, AttributeAxis) {
 #endif
 
     ++i;
-    EXPECT_EQ(i->tag_name(), "head");
+    EXPECT_EQ("head", i->tag_name());
+    EXPECT_EQ("2/0", (std::string) i.path());
     const auto head = i;
     {
       EXPECT_EQ(i->n_attrs(), 0);

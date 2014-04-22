@@ -21,6 +21,7 @@
 #include <utility>
 #include "include/cef_dom.h"
 #include "SCheck.h"
+#include "SCommon.h"
 
 //! [begin, end) overflow asswertiong
 //#define XPART_OVF_ASSERT
@@ -66,17 +67,22 @@ using node_difference_type = ptrdiff_t;
 class child_path_t : public std::list<node_difference_type>
 {
 public:
-  constexpr static value_type uninitialized()
-  {
-    return xpath::uninitialized<value_type>(0);
-  }
+  using std::list<node_difference_type>::list;
 
   child_path_t(node_difference_type idx)
   {
     push_back(idx);
   }
 
-  using std::list<node_difference_type>::list;
+  constexpr static value_type uninitialized()
+  {
+    return xpath::uninitialized<value_type>(0);
+  }
+
+  operator std::string() const
+  {
+    return curr::sformat(*this);
+  }
 };
 
 std::ostream&
@@ -415,6 +421,11 @@ public:
     return &current;
   }
 
+  child_path_t path() const
+  {
+    return child_path;
+  }
+
 protected:
   // Protecting ctrs makes this class "technical" only
   iterator_base() noexcept {}
@@ -445,15 +456,6 @@ protected:
       ovf(overflow),
       empty(false)
   {}
-
-#if 0
-  //! Recalculates the child idx for the current node.
-  child_path_t::value_type current_child_idx_recalc() const
-  {
-    //FIXME
-    return child_path_t::uninitialized();
-  }
-#endif
 
   bool go_first_child()
   {
@@ -558,9 +560,6 @@ protected:
   node<NodePtr> context;
 
   node<NodePtr> current;
-
-  //! it 
-//  difference_type child_idx = uninitialized(child_idx);
 
   //! stores child indexes when go down. child index is
   //! the 0-based number in the child list,
