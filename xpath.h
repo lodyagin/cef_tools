@@ -75,7 +75,12 @@ public:
   {
     push_back(idx);
   }
+
+  using std::list<node_difference_type>::list;
 };
+
+std::ostream&
+operator<< (std::ostream& out, const child_path_t& path);
 
 //! The namespace for internal usage by the node class only
 namespace node_iterators {
@@ -370,7 +375,6 @@ public:
   //! nodes or ever iterator types.
   bool operator==(const iterator_base& o) const noexcept
   {
-    SCHECK(context->IsSame(o.context));
     return (empty && o.empty)
       || (ovf == o.ovf 
           && current.attr_idx == o.current.attr_idx
@@ -419,11 +423,11 @@ protected:
     const node<NodePtr>& context_node,
     const node<NodePtr>& current_node,
     difference_type overflow,
-    difference_type child_idx
+    const child_path_t& child_path_
   ) noexcept
     : context(context_node), 
       current(current_node),
-      child_path(child_idx),
+      child_path(child_path_),
       ovf(overflow),
       empty(false)
   {}
@@ -433,11 +437,11 @@ protected:
     const node<NodePtr>& context_node,
     difference_type overflow,
     int attr_idx,
-    difference_type child_idx
+    const child_path_t& child_path_
   ) noexcept
     : context(context_node), 
       current(context_node, attr_idx),
-      child_path(child_idx),
+      child_path(child_path_),
       ovf(overflow),
       empty(false)
   {}
@@ -455,6 +459,7 @@ protected:
   {
     if (current.go_first_child()) {
       child_path.push_back(0);
+      LOG_TRACE(log, "FC: " << child_path);
       return true;
     }
     return false;
@@ -466,6 +471,7 @@ protected:
       child_path.push_back(
         current.preceding_sibling()->size()
       );
+      LOG_TRACE(log, "LC: " << child_path);
       return true;
     }
     return false;
@@ -473,14 +479,22 @@ protected:
 
   bool go_next_sibling()
   {
-    return current.go_next_sibling()
-      && (++(child_path.back()), true);
+    if (current.go_next_sibling()) {
+      ++(child_path.back());
+      LOG_TRACE(log, "NS: " << child_path);
+      return true;
+    }
+    return false;
   }
 
   bool go_prev_sibling()
   {
-    return current.go_prev_sibling()
-      && (--(child_path.back()), true);
+    if (current.go_prev_sibling()) {
+      --(child_path.back());
+      LOG_TRACE(log, "PS: " << child_path);
+      return true;
+    }
+    return false;
   }
 
   //! reloads itself with the parent if any or
@@ -488,12 +502,14 @@ protected:
   bool go_parent()
   {
     if (current.go_parent()) {
-      SCHECK(child_path.size() >= 2);
+      SCHECK(child_path.size() >= 1);
       child_path.pop_back();
+      LOG_TRACE(log, "PAR^: " << child_path);
       return true;
     }
     else {
       assert(child_path.size() == 1);
+      LOG_TRACE(log, "PAR-: " << child_path);
       return false;
     }
   }
@@ -503,6 +519,7 @@ protected:
     current = context;
     // empty current path
     child_path = child_path_t::uninitialized();
+    LOG_TRACE(log, "CTX!(fc)");
     return go_first_child();
   }
 
@@ -511,6 +528,7 @@ protected:
     current = context;
     // empty current path
     child_path = child_path_t::uninitialized();
+    LOG_TRACE(log, "CTX!(lc)");
     return go_last_child();
   }
 
@@ -519,6 +537,7 @@ protected:
     current = context;
     // empty current path
     child_path = child_path_t::uninitialized();
+    LOG_TRACE(log, "CTX!");
     return true;
   }
 
@@ -554,6 +573,9 @@ protected:
 
   //! true if context and current are not initialized
   bool empty = true;
+
+private:
+  using log = curr::Logger<iterator_base>;
 };
 
 template<class NodePtr, xpath::axis axis>
@@ -566,7 +588,6 @@ template<class NodePtr>
 class iterator<NodePtr, axis::self> 
   : public iterator_base<NodePtr>
 {
-//  friend class xpath::node<NodePtr>;
   friend class iterator<NodePtr, axis::descendant>;
 
 public:
@@ -884,8 +905,6 @@ template<class NodePtr>
 class iterator<NodePtr, axis::descendant> 
   : public iterator_base<NodePtr>
 {
-//  friend class xpath::node<NodePtr>;
-
 public:
   iterator() noexcept {}
 
@@ -899,14 +918,10 @@ public:
 
     // go to the child first
     if (this->go_first_child())
-    {
-      LOG_TRACE(log, "FC");
-    }
+      ;
     // now try the next sibling
     else if (this->go_next_sibling())
-    {
-      LOG_TRACE(log, "NS");
-    }
+      ;
     else {
       // now try the parents' next sibling
       while (!this->current->IsSame(this->context))
@@ -918,24 +933,20 @@ public:
           << ']');
         if (this->go_parent())
         {
-          LOG_TRACE(log, "^");
           if (this->current->IsSame(this->context))
             break; // go to end()
 
           if (this->go_next_sibling())
-          {
-            LOG_TRACE(log, 
-              "PNS" << this->current.tag_name()
-            );
             break;
-          }
         } 
         else break;
       }
-      if (this->current->IsSame(this->context))
+      if (this->current->IsSame(this->context)) {
         this->go_first_child(); //cycled
+        ++(this->ovf);
+      }
     }
-
+    ovf_assert(this->ovf);
     return *this;
   }
 
@@ -968,7 +979,8 @@ protected:
           : context_node,
         0,
         context_node->GetFirstChild().get() 
-          ? 0 : child_path_t::uninitialized()
+          ? child_path_t{child_path_t::uninitialized(), 0}
+          : child_path_t{child_path_t::uninitialized()}
       )
   {}
 
@@ -982,7 +994,8 @@ protected:
         // begin == end for an empty axis
         context_node->GetFirstChild().get() ? +1 : 0,
         context_node->GetFirstChild().get() 
-          ? 0 : child_path_t::uninitialized()
+          ? child_path_t{child_path_t::uninitialized(), 0}
+          : child_path_t{child_path_t::uninitialized()}
       )
   {}
 
@@ -996,8 +1009,6 @@ template<class NodePtr>
 class iterator<NodePtr, axis::attribute> 
   : public iterator_base<NodePtr>
 {
-//  friend class xpath::node<NodePtr>;
-
 public:
   iterator() noexcept {}
 
@@ -1340,12 +1351,6 @@ operator<< (std::ostream& out, const node<NodePtr>& nd)
       THROW_NOT_IMPLEMENTED;
   }
 }
-
-/*
-//! prints matched tags
-std::ostream&
-operator<< (std::ostream& out, const select& sel);
-*/
 
 }
 

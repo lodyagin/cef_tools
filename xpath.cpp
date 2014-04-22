@@ -14,40 +14,35 @@
 #include "string_utils.h"
 #include "xpath.h"
 
+namespace xpath {
+
+std::ostream&
+operator<< (std::ostream& out, const child_path_t& path)
+{
+  assert(path.size() >= 1);
+  if (path.size() == 0)
+    out << '?';
+  else if (path.size() == 1)
+    out << '.';
+  else {
+    auto start = path.begin(); 
+    ++start;
+    auto last = path.end();
+    --last;
+    for (auto it = start; it != path.end(); ++it)
+    {
+      out << *it;
+      if (it != last)
+        out << '/';
+    }
+  }
+  return out;
+}
+
+}
+
 namespace renderer {
 namespace dom_visitor {
 namespace xpath {
-
-/*
-select::select(
-  const std::string& tag_,
-  const CefRefPtr<CefDOMNode>& dom_
-) 
-  : tag(tag_), context_node(dom_)
-{
-  std::transform(
-    tag.begin(), tag.end(), tag.begin(), ::tolower
-  );
-}
-
-std::ostream&
-operator<< (std::ostream& out, const select& sel)
-{
-  auto descendants = sel.context_node.descendant();
-  std::copy_if(
-    descendants->begin(),
-    descendants->end(),
-    std::ostream_iterator<CefRefPtr<CefDOMNode>>(
-      out,
-      "\n"
-    ),
-    [&sel](const xpath::node& node)
-    {
-      return node.tag_name() == sel.tag;
-    }
-  );
-  return out;
-}
-*/
 
 }}}
