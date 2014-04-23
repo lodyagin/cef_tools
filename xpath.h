@@ -23,7 +23,9 @@
 #include "SCheck.h"
 #include "SCommon.h"
 
-//! [begin, end) overflow asswertiong
+//! [begin, end) overflow on iterator movement assertion
+//! (it will always raise an exception on data access
+//! anyway)
 //#define XPART_OVF_ASSERT
 
 #ifndef XPATH_OVF_ASSERT
