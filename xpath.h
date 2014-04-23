@@ -37,9 +37,14 @@
 namespace xpath 
 {
 
-//! An xpath expression
-class xpath_expr_t
+//! An xpath expression over Iterator
+template<class Iteratir>
+class expression
 {
+public:
+  //! evaluate the expression over the iterator (as
+  //! true/false).
+  virtual bool operator()(Iterator it) const = 0;
 };
 
 //! The special error value to mark uninitialized data.
@@ -1182,10 +1187,14 @@ public:
 
   random_access_adapter& operator+=(difference_type n)
   {
+#if 1
+    std::advance(*this, n);
+#else
     if (n > 0)
       while (n--) ++(*this);
     else if (n < 0)
       while (n++) --(*this);
+#endif
     return *this;
   }
 
@@ -1263,7 +1272,199 @@ operator-(
 
 }
 
-// the implementation
+//! The selective iterator. Selects only steps satisfied
+//! to an expression.
+//! @tparam iteration_lim limits number of steps used for
+//! match search to prevent an infinite loop.
+template<
+  class It, 
+  template<class> class Expr,
+  int iteration_lim = 10000000
+>
+class iterator  
+{
+  using TR = std::iterator_traits<It>;
+
+public:
+  using expr_t = Expr<It>;
+
+  using TR::iterator_category; // NB
+  using TR::value_type;
+  using TR::difference_type;
+  using TR::pointer, TR::reference;
+
+  //! constructs over the iterator, end limit and expression
+  explicit iterator(It x, It end_, const expr_t& expr_) 
+    : current(x), end(end_),
+      expr(expr_)
+  {}
+
+  //! constructs over the iterator, end limit and expression
+  explicit iterator(It x, It end_, expr_t&& expr_) 
+    : current(x), end(end_),
+      expr(std::move(expr_))
+  {}
+
+  template<class U>
+  iterator(const iterator<U>& other)
+    : current(other.base())
+  {}
+
+  template<class U>
+  iterator& operator = 
+    (const iterator<U>& other)
+  {
+    current = other.base();
+  }
+
+  Iterator base() const
+  {
+    return current;
+  }
+
+  reference operator * () const
+  {
+    skip_unmatched();
+    return *current;
+  }
+
+  pointer operator -> () const
+  {
+    return &(operator*());
+  }
+
+  iterator& operator++()
+  {
+    skip_unmatched(); next_matched();
+    return *this;
+  }
+
+  iterator operator++(int) &
+  {
+    iterator copy(*this);
+    ++(*this);
+    return copy;
+  }
+
+  iterator operator++(int) &&
+  {
+    return *this;
+  }
+
+  iterator& operator+=(difference_type n)
+  {
+    std::advance(*this, n);
+    return *this;
+  }
+
+  iterator operator+(difference_type n) const &
+  {
+    iterator copy(*this);
+    return copy += n;
+  }
+
+  iterator operator+(difference_type n) &&
+  {
+    return operator+=(n);
+  }
+
+  iterator& operator--()
+  {
+    skip_unmatched_backward(); prev_matched();
+    return *this;
+  }
+
+  iterator operator--(int) &
+  {
+    iterator copy(*this);
+    --(*this);
+    return copy;
+  }
+
+  iterator operator--(int) &&
+  {
+    return *this;
+  }
+
+  iterator& operator-=(difference_type n)
+  {
+    return operator+=(-n);
+  }
+
+  iterator operator-(difference_type n) const &
+  {
+    iterator copy(*this);
+    return copy -= n;
+  }
+
+  iterator operator-(difference_type n) &&
+  {
+    return operator-=(n);
+  }
+
+  reference operator[](difference_type n) const
+  {
+    return *(*this + n);
+  }
+
+protected:
+  //! if current is not matched with expr forward to the
+  //! first matched. NB do not check current.ovf, the
+  //! result needs to be comparend with axis_::xend().
+  void skip_unmatched()
+  {
+//    while(current != end && !expr(current))
+    
+    for (int k = 1; 
+         !expr(current) && k <= iteration_lim;
+         k++)
+      ++current;
+
+    if (k > iteration_lim)
+      THROW_PROGRAM_ERROR; //TODO specialize the expception
+  }
+
+  //! if current is not matched with expr backward to the
+  //! last matched. NB do not check current.ovf, the
+  //! result needs to be comparend with axis_::xend().
+  void skip_unmatched_backward()
+  {
+    for (int k = 1; 
+         !expr(current) && k <= iteration_lim;
+         k++)
+      --current;
+
+    if (k > iteration_lim)
+      THROW_PROGRAM_ERROR; //TODO specialize the expception
+  }
+
+  //! Unconditionally forwards to the
+  //! next iterator position matched with expr. 
+  //! NB do not check current.ovf, the
+  //! result needs to be comparend with axis_::xend().
+  void next_matched()
+  {
+    ++current;
+    skip_unmatched();
+  }
+
+  //! Unconditionally backwards to the
+  //! previous iterator position matched with expr. 
+  //! NB do not check current.ovf, the
+  //! result needs to be comparend with axis_::xend().
+  void next_matched()
+  {
+    --current;
+    skip_unmatched_backward();
+  }
+
+  It current;
+  //! no iteration over end to use the standard STL loop
+  //! stopping condition (== end())
+  It end;
+
+  expr_t expr;
+};
 
 template<class NodePtr>
 template<xpath::axis ax>
@@ -1271,6 +1472,9 @@ class node<NodePtr>::axis_
 {
 public:
   using iterator = node::iterator<ax>;
+
+  template<class Expr>
+  using xiterator = xpath::iterator<iterator, Expr>;
 
   explicit axis_(node dom_)
     : dom(dom_)
@@ -1282,6 +1486,20 @@ public:
   }
 
   iterator end()
+  {
+    return iterator(
+      dom, 
+      node_iterators::end_t()
+      );
+  }
+
+  template<class Expr>
+  iterator xbegin(Expr&& expr)
+  {
+    return ++--xiterator(begin(),std::forward<Expr>(expr));
+  }
+
+  iterator xend()
   {
     return iterator(
       dom, 

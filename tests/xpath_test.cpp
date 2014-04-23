@@ -388,7 +388,7 @@ TEST(Xpath, AttributeAxis) {
   });
 }
 
-TEST(Xpath, Expression)
+TEST(Xpath, NodeAttributes)
 {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {

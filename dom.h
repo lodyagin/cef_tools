@@ -9,10 +9,15 @@
 #ifndef OFFSCREEN_DOM_H
 #define OFFSCREEN_DOM_H
 
+#include "Repository.h"
+#include "xpath.h"
+
 namespace shared {
 namespace dom {
 
-
+class node
+{
+};
 
 }}
 
