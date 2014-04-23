@@ -408,22 +408,49 @@ TEST(Xpath, NodeAttributes)
 
 TEST(Xpath, XpathIterator)
 {
+  using namespace std;
+
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
+    const auto html = node(r).child()->begin() + 2;
+    EXPECT_EQ(html->tag_name(), "html");
+
+    // self axis
     {
-      // self axis
-      const auto html = node(r).child()->begin() + 2;
-      const auto begin = html->self<xpath::constant_expression>(false)->xbegin();
-      const auto end = html->self<xpath::constant_expression>(false)->xend();
+      const auto begin = html
+        ->self<xpath::test::constant>(false)->xbegin();
+      const auto end = html
+        -> self<xpath::test::constant>(false)->xend();
       EXPECT_EQ(begin, end);
       //EXPECT_EQ(0, begin - end); //TODO check exception
       //EXPECT_EQ(0, end - begin);
 
-      const auto begin1 = html->self<xpath::constant_expression>(true)->xbegin();
-      const auto end1 = html->self<xpath::constant_expression>(true)->xend();
+      const auto begin1 = html
+        -> self<xpath::test::constant>(true)->xbegin();
+      const auto end1 = html
+        -> self<xpath::test::constant>(true)->xend();
       EXPECT_NE(begin1, end1);
       EXPECT_EQ(-1, begin1 - end1);
       EXPECT_EQ(1, end1 - begin1);
+    }
+
+    // child axis
+    {
+      auto ax1 = html
+        -> child<xpath::test::node_type>(
+             xpath::node_type::node
+           );
+      const auto begin = ax1->xbegin();
+      const auto end = ax1->xend();
+#if 1
+      copy(
+        begin, end, 
+        ostream_iterator<node>(cout, "\n")
+      );
+#endif
+      EXPECT_NE(begin, end);
+      EXPECT_EQ(-2, begin - end);
+      EXPECT_EQ(2, end - begin);
     }
   });
 }

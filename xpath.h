@@ -40,18 +40,30 @@ struct cycled_random_access_iterator_tag
     cycled_iterator_tag
 {};
 
-//! An xpath expression over Iterator. 
+//! [38] (xpath) NodeType
+enum class node_type { 
+  comment, 
+  text, 
+  processing_instruction,
+  node,
+  other_type
+};
+
+//! [7] NodeTest
+namespace test {
+
+//! An xpath test over Iterator. 
 //! This version always returns `result'.
 //! @tparam Iterator is node_iterators::iterator, not
 //! xpath::iterator (the last will be created from this
-//! expression) 
+//! test) 
 template<class Iterator>
-class constant_expression
+class constant
 {
 public:
-  constant_expression(bool res) : result(res) {}
+  constant(bool res) : result(res) {}
   
-  virtual bool operator()(Iterator it) const
+  bool operator()(Iterator it) const
   {
     return result;
   }
@@ -60,13 +72,31 @@ protected:
   const bool result;
 };
 
-/*
+//! the NodeType test
 template<class It>
-using true_expression = constant_expression<It, true>;
+class node_type
+{
+public:
+  using type = xpath::node_type;
 
-template<class It>
-using false_expression = constant_expression<It, false>;
-*/
+  node_type(type a_type) : the_type(a_type) {}
+
+  bool operator()(It it) const
+  {
+    LOG_TRACE(log, "xpath::test::node_type: "
+      << (int)it->get_type() << " vs " << (int)the_type
+    );
+    return it->get_type() == the_type;
+  }
+
+protected:
+  type the_type;
+
+private:
+  using log = curr::Logger<node_type>;
+};
+
+} // test
 
 //! The special error value to mark uninitialized data.
 template<class Int>
@@ -158,7 +188,10 @@ class node
   );
 
 public:
-  enum class type { not_valid, dom, attribute };
+  using type = xpath::node_type;
+
+  //! internal type
+  enum class itype { not_valid, dom, attribute };
 
 #if 0
   template<xpath::axis axis>
@@ -185,13 +218,13 @@ public:
 
   node(const node& o) = default;
 
-  node(NodePtr dom_) : dom(dom_), the_type(type::dom)
+  node(NodePtr dom_) : dom(dom_), the_type(itype::dom)
   {
     SCHECK(dom);
   }
 
   node(NodePtr dom_, int attr) 
-    : dom(dom_), the_type(type::attribute), attr_idx(attr)
+    : dom(dom_), the_type(itype::attribute), attr_idx(attr)
   {
     SCHECK(dom);
   }
@@ -200,18 +233,18 @@ public:
 
   template<
     xpath::axis ax, 
-    template<class> class Expr = xpath::constant_expression
+    template<class> class Test = xpath::test::constant
   >
   class axis_;
 
 #define XPATH_INTERNAL_AXIS_DEF(ax) \
   std::shared_ptr<                                      \
-    axis_<xpath::axis::ax/*, xpath::false_expression*/>   \
+    axis_<xpath::axis::ax>                              \
   > ax() const;                                         \
                                                         \
-  template<template<class> class Expr, class... Args>   \
-  std::shared_ptr<axis_<xpath::axis::ax, Expr>>         \
-  ax(Args&&... expr_args) const;
+  template<template<class> class Test, class... Args>   \
+  std::shared_ptr<axis_<xpath::axis::ax, Test>>         \
+  ax(Args&&... test_args) const;
 
 #define XPATH_INTERNAL_AXIS_DECL(ax) \
   template<class NodePtr>                                 \
@@ -222,14 +255,14 @@ public:
   }                                                       \
                                                           \
   template<class NodePtr>                                 \
-  template<template<class> class Expr, class... Args>   \
+  template<template<class> class Test, class... Args>   \
   std::shared_ptr<                                        \
-    node<NodePtr>::axis_<axis::ax, Expr>                  \
+    node<NodePtr>::axis_<axis::ax, Test>                  \
   >                                                       \
-  node<NodePtr>::ax(Args&&... expr_args) const            \
+  node<NodePtr>::ax(Args&&... test_args) const            \
   {                                                       \
-    return std::make_shared<axis_<xpath::axis::ax>>       \
-      (dom, std::forward<Args>(expr_args)...);            \
+    return std::make_shared<axis_<xpath::axis::ax, Test>> \
+      (dom, std::forward<Args>(test_args)...);            \
   }
 
   XPATH_INTERNAL_AXIS_DEF(self);
@@ -239,9 +272,27 @@ public:
   XPATH_INTERNAL_AXIS_DEF(following_sibling);
   XPATH_INTERNAL_AXIS_DEF(preceding_sibling);
 
+  type get_type() const
+  {
+    SCHECK(dom);
+    switch(dom->GetType())
+    {
+      case DOM_NODE_TYPE_COMMENT:
+        return type::comment;
+      case DOM_NODE_TYPE_TEXT:
+        return type::text;
+      case DOM_NODE_TYPE_PROCESSING_INSTRUCTIONS:
+        return type::processing_instruction;
+      case DOM_NODE_TYPE_ELEMENT:
+        return type::node;
+      default:
+        return type::other_type;
+    }
+  }
+
   std::string tag_name() const
   {
-    SCHECK(the_type != type::attribute);
+    SCHECK(the_type != itype::attribute);
 
     if (!dom->IsElement())
       return std::string();
@@ -268,7 +319,7 @@ public:
     
   operator std::pair<std::string, std::string>() const
   {
-    SCHECK(the_type == type::attribute);
+    SCHECK(the_type == itype::attribute);
     const int n = n_attrs();
     SCHECK(n > 0);
     assert(attr_idx >= 0);
@@ -289,7 +340,7 @@ public:
 #if 0
   std::string name() const
   {
-    SCHECK(the_type == type::attribute);
+    SCHECK(the_type == itype::attribute);
 
     CefString name, value;
     dom->GetElementAttributeByIdx(
@@ -405,7 +456,7 @@ public:
 protected:
   bool is_valid() const
   {
-    return the_type != type::not_valid
+    return the_type != itype::not_valid
       && dom.get() != nullptr;
   }
 
@@ -434,11 +485,7 @@ protected:
 
   NodePtr dom;
 
-  //! depth to context_node if it is a result of xpath
-  //! expression or -1
-  //int depth = -1;
-
-  type the_type = type::not_valid;
+  itype the_type = itype::not_valid;
 
   //! the attribute sequence number
   int attr_idx = 0; 
@@ -498,28 +545,28 @@ public:
   {
     //todo switch node type, check attr range
     SCHECK(!empty);
-    SCHECK(ovf == 0);
+//    SCHECK(ovf == 0);
     return current;
   }
 
   const_reference operator* () const
   {
     SCHECK(!empty);
-    SCHECK(ovf == 0);
+//    SCHECK(ovf == 0);
     return current;
   }
 
   pointer operator->()
   {
     SCHECK(!empty);
-    SCHECK(ovf == 0);
+//    SCHECK(ovf == 0);
     return &current;
   }
 
   const_pointer operator->() const
   {
     SCHECK(!empty);
-    SCHECK(ovf == 0);
+//    SCHECK(ovf == 0);
     return &current;
   }
 
@@ -1345,17 +1392,17 @@ operator-(
 }
 
 //! The selective iterator. Selects only steps satisfied
-//! to an expression.
+//! to a  test.
 //! @tparam iteration_lim limits number of steps used for
 //! match search to prevent an infinite loop.
 template<
   class It, 
-  template<class> class Expr
+  template<class> class Test
 >
 class iterator  
 {
 public:
-  using expr_t = Expr<It>;
+  using test_t = Test<It>;
 
   using node_ptr_type = typename It::node_ptr_type;
   using value_type = typename It::value_type;
@@ -1380,22 +1427,22 @@ public:
   using iterator_category = 
     cycled_bidirectional_iterator_tag;
 
-  //! constructs over the iterator, end limit and expression
-  explicit iterator(It x, const expr_t& expr_) 
+  //! constructs over the iterator, end limit and test
+  explicit iterator(It x, const test_t& test_) 
     : current(x), 
-      expr(expr_),
+      test(test_),
       empty_interval(!skip_unmatched())
   {
-    assert(empty_interval || expr(current));
+    assert(empty_interval || test(current));
   }
 
-  //! constructs over the iterator, end limit and expression
-  explicit iterator(It x, expr_t&& expr_) 
+  //! constructs over the iterator, end limit and test
+  explicit iterator(It x, test_t&& test_) 
     : current(x),
-      expr(std::move(expr_)),
+      test(std::move(test_)),
       empty_interval(!skip_unmatched())
   {
-    assert(empty_interval || expr(current));
+    assert(empty_interval || test(current));
   }
 
   It base() const
@@ -1427,7 +1474,7 @@ public:
   reference operator*() const
   {
     SCHECK(!empty_interval);
-    assert(expr(current));
+    assert(test(current));
     return *current;
   }
 
@@ -1438,7 +1485,7 @@ public:
 
   iterator& operator++()
   {
-    assert(expr(current));
+    assert(test(current));
     next_matched();
     return *this;
   }
@@ -1479,7 +1526,7 @@ public:
 
   iterator& operator--()
   {
-    assert(expr(current));
+    assert(test(current));
     prev_matched();
     return *this;
   }
@@ -1531,13 +1578,13 @@ public:
 #endif
 
 protected:
-  //! If current is not matched with expr forwards to the
+  //! If current is not matched with test forwards to the
   //! first matched (with possible one overflow). If no
   //! matches return false.
   bool skip_unmatched()
   {
     const auto max_ovf = current.get_ovf() + 1;
-    while(!expr(current)) {
+    while(!test(current)) {
       ++current;
       if (current.get_ovf() > max_ovf)
         return false;
@@ -1545,13 +1592,13 @@ protected:
     return true;
   }
 
-  //! if current is not matched with expr backward to the
+  //! if current is not matched with test backward to the
   //! last matched.
   void skip_unmatched_backward()
   {
     assert(!empty_interval);
     const auto min_ovf = current.get_ovf() - 1;
-    while(!expr(current)) {
+    while(!test(current)) {
 
       --current;
 
@@ -1562,7 +1609,7 @@ protected:
   }
 
   //! Unconditionally forwards to the
-  //! next iterator position matched with expr. 
+  //! next iterator position matched with test. 
   //! NB do not check current.ovf, the
   //! result needs to be comparend with axis_::xend().
   void next_matched()
@@ -1573,7 +1620,7 @@ protected:
   }
 
   //! Unconditionally backwards to the
-  //! previous iterator position matched with expr. 
+  //! previous iterator position matched with test. 
   //! NB do not check current.ovf, the
   //! result needs to be comparend with axis_::xend().
   void prev_matched()
@@ -1585,7 +1632,7 @@ protected:
 
   It current;
 
-  expr_t expr;
+  test_t test;
 
   //! begin = end, the current value is inaccessible
   bool empty_interval;
@@ -1594,7 +1641,7 @@ protected:
 template<class NodePtr>
 template<
   xpath::axis ax, 
-  template<class> class Expr // = xpath::false_expression
+  template<class> class Test
 >
 class node<NodePtr>::axis_
 {
@@ -1608,26 +1655,26 @@ public:
 #endif
 #if 0
   using xiterator = node_iterators::random_access_adapter<
-    xpath::iterator<node::iterator<ax>, Expr>
+    xpath::iterator<node::iterator<ax>, Test>
   >;
 #else
-  // NB Expr can use random access iterator internally
+  // NB Test can use random access iterator internally
   using xiterator = node_iterators::random_access_adapter<
-    xpath::iterator<iterator, Expr>
+    xpath::iterator<iterator, Test>
   >;
 #endif
 
-  using expr_t = Expr<iterator>;
+  using test_t = Test<iterator>;
 
   explicit axis_(node dom_) 
     : dom(dom_),
-      expr(false)
+      test(false)
   {}
 
   template<class... Args>
-  explicit axis_(node dom_, Args&&... expr_args)
+  explicit axis_(node dom_, Args&&... test_args)
     : dom(dom_),
-      expr(std::forward<Args>(expr_args)...)
+      test(std::forward<Args>(test_args)...)
   {}
 
   iterator begin()
@@ -1645,12 +1692,12 @@ public:
 
   xiterator xbegin()
   {
-    return xiterator(begin(), expr);
+    return xiterator(begin(), test);
   }
 
   xiterator xend()
   {
-    return xiterator(end(), expr);
+    return xiterator(end(), test);
   }
 
   //! the number of nodes in the axis
@@ -1661,7 +1708,7 @@ public:
     return dist;
   }
 
-  //! the number of only expr matched nodes
+  //! the number of only test matched nodes
   typename iterator::size_type xsize() //const
   {
     const auto dist = xend() - xbegin();
@@ -1671,7 +1718,7 @@ public:
 
 protected:
   const node dom;
-  const expr_t expr;
+  const test_t test;
 };
 
 XPATH_INTERNAL_AXIS_DECL(self);
@@ -1690,7 +1737,7 @@ operator<< (std::ostream& out, const node<NodePtr>& nd)
 
   switch(nd.the_type)
   {
-    case node<NodePtr>::type::dom:
+    case node<NodePtr>::itype::dom:
     {
       if (!nd->IsElement())
         return out << "(not_element)";
@@ -1712,14 +1759,14 @@ operator<< (std::ostream& out, const node<NodePtr>& nd)
       return out;
     }
 
-    case node<NodePtr>::type::attribute:
+    case node<NodePtr>::itype::attribute:
     {
       const pair<string, string> p(nd);
       return out << '{' << p.first 
                  << '=' << p.second << '}';
     }
 
-    case node<NodePtr>::type::not_valid:
+    case node<NodePtr>::itype::not_valid:
       return out << "(node is not valid)";
 
     default:
