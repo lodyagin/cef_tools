@@ -40,6 +40,23 @@ struct cycled_random_access_iterator_tag
     cycled_iterator_tag
 {};
 
+//! xpath axes
+enum class axis {
+  ancestor,
+  ancestor_or_self,
+  attribute,
+  child,
+  descendant,
+  descendant_or_self,
+  following,
+  following_sibling,
+  namespace_axis,
+  parent,
+  preceding,
+  preceding_sibling,
+  self
+};
+
 //! [38] (xpath) NodeType
 enum class node_type { 
   comment, 
@@ -69,7 +86,7 @@ public:
   }
 
 protected:
-  const bool result;
+  bool result;
 };
 
 //! the NodeType test
@@ -104,23 +121,6 @@ constexpr static Int uninitialized(Int)
 {
   return std::numeric_limits<Int>::min();
 }
-
-//! xpath axes
-enum class axis {
-  ancestor,
-  ancestor_or_self,
-  attribute,
-  child,
-  descendant,
-  descendant_or_self,
-  following,
-  following_sibling,
-  namespace_axis,
-  parent,
-  preceding,
-  preceding_sibling,
-  self
-};
 
 template<class NodePtr>
 class node;
@@ -235,33 +235,33 @@ public:
     xpath::axis ax, 
     template<class> class Test = xpath::test::constant
   >
-  class axis_;
+  class axis_t;
 
 #define XPATH_INTERNAL_AXIS_DEF(ax) \
   std::shared_ptr<                                      \
-    axis_<xpath::axis::ax>                              \
+    axis_t<xpath::axis::ax>                              \
   > ax() const;                                         \
                                                         \
   template<template<class> class Test, class... Args>   \
-  std::shared_ptr<axis_<xpath::axis::ax, Test>>         \
+  std::shared_ptr<axis_t<xpath::axis::ax, Test>>         \
   ax(Args&&... test_args) const;
 
 #define XPATH_INTERNAL_AXIS_DECL(ax) \
   template<class NodePtr>                                 \
-  std::shared_ptr<node<NodePtr>::axis_<axis::ax>>         \
+  std::shared_ptr<node<NodePtr>::axis_t<axis::ax>>         \
   node<NodePtr>::ax() const                               \
   {                                                       \
-    return std::make_shared<axis_<xpath::axis::ax>>(dom); \
+    return std::make_shared<axis_t<xpath::axis::ax>>(dom); \
   }                                                       \
                                                           \
   template<class NodePtr>                                 \
   template<template<class> class Test, class... Args>   \
   std::shared_ptr<                                        \
-    node<NodePtr>::axis_<axis::ax, Test>                  \
+    node<NodePtr>::axis_t<axis::ax, Test>                  \
   >                                                       \
   node<NodePtr>::ax(Args&&... test_args) const            \
   {                                                       \
-    return std::make_shared<axis_<xpath::axis::ax, Test>> \
+    return std::make_shared<axis_t<xpath::axis::ax, Test>> \
       (dom, std::forward<Args>(test_args)...);            \
   }
 
@@ -1275,12 +1275,7 @@ public:
       <typename Iterator::iterator_category>;
 
   using Iterator::Iterator;
-/*
-  using Iterator::is_empty;
-  using Iterator::is_same_context;
-  using Iterator::get_ovf;
-  using Iterator::ovf_equal;
-*/
+
   random_access_adapter& operator++()
   {
     Iterator::operator++();
@@ -1611,7 +1606,7 @@ protected:
   //! Unconditionally forwards to the
   //! next iterator position matched with test. 
   //! NB do not check current.ovf, the
-  //! result needs to be comparend with axis_::xend().
+  //! result needs to be comparend with axis_t::xend().
   void next_matched()
   {
     assert(!empty_interval);
@@ -1622,7 +1617,7 @@ protected:
   //! Unconditionally backwards to the
   //! previous iterator position matched with test. 
   //! NB do not check current.ovf, the
-  //! result needs to be comparend with axis_::xend().
+  //! result needs to be comparend with axis_t::xend().
   void prev_matched()
   {
     assert(!empty_interval);
@@ -1643,7 +1638,7 @@ template<
   xpath::axis ax, 
   template<class> class Test
 >
-class node<NodePtr>::axis_
+class node<NodePtr>::axis_t
 {
 public:
 #if 0
@@ -1666,13 +1661,13 @@ public:
 
   using test_t = Test<iterator>;
 
-  explicit axis_(node dom_) 
+  explicit axis_t(node dom_) 
     : dom(dom_),
       test(false)
   {}
 
   template<class... Args>
-  explicit axis_(node dom_, Args&&... test_args)
+  explicit axis_t(node dom_, Args&&... test_args)
     : dom(dom_),
       test(std::forward<Args>(test_args)...)
   {}
@@ -1708,10 +1703,24 @@ public:
     return dist;
   }
 
-  //! the number of only test matched nodes
-  typename iterator::size_type xsize() //const
+  //! Returns the number of only test matched nodes
+  //! If args are not null returns xbegin() and xend()
+  //! values also.
+  typename iterator::size_type xsize(
+    xiterator* xbg_ = nullptr,
+    xiterator* xnd_ = nullptr
+  )
   {
-    const auto dist = xend() - xbegin();
+    const auto xbg = xbegin();
+    const auto xnd = xend();
+
+    if (xbg_) *xbg_ = xbg;
+    if (xnd_) *xnd_ = xbg;
+
+    if (xbg.is_empty())
+      return 0;
+
+    const auto dist = xnd - xbg;
     SCHECK(dist >= 0);
     return dist;
   }
@@ -1775,33 +1784,5 @@ operator<< (std::ostream& out, const node<NodePtr>& nd)
 }
 
 }
-
-// for usage in renderer thread (process) only
-namespace renderer {
-
-// for usage only inside the CefDOMVisitor::Visit
-namespace dom_visitor {
-
-//! Adds conversion to bool for CefRefPtr
-class wrap : public CefRefPtr<CefDOMNode>
-{
-public:
-  using CefRefPtr::CefRefPtr;
-
-  wrap(const CefRefPtr& o) : CefRefPtr(o) {}
-
-  operator bool() const
-  {
-    return get();
-  }
-};
-
-namespace xpath {
-
-using node = ::xpath::node<wrap>;
-
-}
-
-}}
 
 #endif

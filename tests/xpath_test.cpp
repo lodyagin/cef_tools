@@ -9,6 +9,7 @@
 #include "Logging.h"
 #include "Event.h"
 #include "xpath.h"
+#include "dom.h"
 #include "offscreen.h"
 #include "browser.h"
 #include "gtest/gtest.h"
@@ -87,6 +88,8 @@ void distance_test(
 TEST(Xpath, SelfAxis) {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
+    using namespace renderer::dom_visitor;
+
     node root(r);
     const node::self_iterator begin = root.self()->begin();
     const node::self_iterator end = root.self()->end();
@@ -125,6 +128,8 @@ TEST(Xpath, SelfAxis) {
 TEST(Xpath, SiblingAxes) {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
+    using namespace renderer::dom_visitor;
+
     node root(r);
 
     // a root node has no siblings
@@ -166,6 +171,8 @@ TEST(Xpath, SiblingAxes) {
 TEST(Xpath, ChildAxis) {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
+    using namespace renderer::dom_visitor;
+
     node root(r);
     node::child_iterator begin = root.child()->begin();
     node::child_iterator end = root.child()->end();
@@ -236,6 +243,8 @@ TEST(Xpath, ChildAxis) {
 TEST(Xpath, DescendantAxis) {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
+    using namespace renderer::dom_visitor;
+
     node::descendant_iterator begin = 
       node(r).descendant()->begin();
     // TODO EXPECT_EQ(*begin, node(r));
@@ -318,6 +327,8 @@ TEST(Xpath, DescendantAxis) {
 TEST(Xpath, AttributeAxis) {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
+    using namespace renderer::dom_visitor;
+
     node root(r);
 
     auto i = root.descendant()->begin();
@@ -390,6 +401,8 @@ TEST(Xpath, NodeAttributes)
 {
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
+    using namespace renderer::dom_visitor;
+
     // output all 'a' tags hrefs
     auto descendant = node(r).descendant();
     int cnt1 = 0, cnt2 = 0;
@@ -408,41 +421,50 @@ TEST(Xpath, NodeAttributes)
 
 TEST(Xpath, XpathIterator)
 {
-  using namespace std;
-
   test_dom([](CefRefPtr<CefDOMNode> r)
   {
+    using namespace std;
+    using namespace renderer::dom_visitor;
+
     const auto html = node(r).child()->begin() + 2;
     EXPECT_EQ(html->tag_name(), "html");
 
     // self axis
     {
       const auto begin = html
-        ->self<xpath::test::constant>(false)->xbegin();
+        ->self<::xpath::test::constant>(false)->xbegin();
       const auto end = html
-        -> self<xpath::test::constant>(false)->xend();
+        -> self<::xpath::test::constant>(false)->xend();
       EXPECT_EQ(begin, end);
       //EXPECT_EQ(0, begin - end); //TODO check exception
       //EXPECT_EQ(0, end - begin);
+      EXPECT_EQ(
+        0, 
+        html->self<::xpath::test::constant>(false)->xsize()
+      );
 
       const auto begin1 = html
-        -> self<xpath::test::constant>(true)->xbegin();
+        -> self<::xpath::test::constant>(true)->xbegin();
       const auto end1 = html
-        -> self<xpath::test::constant>(true)->xend();
+        -> self<::xpath::test::constant>(true)->xend();
       EXPECT_NE(begin1, end1);
       EXPECT_EQ(-1, begin1 - end1);
       EXPECT_EQ(1, end1 - begin1);
+      EXPECT_EQ(
+        1, 
+        html->self<::xpath::test::constant>(true)->xsize()
+      );
     }
 
     // child axis
     {
       auto ax1 = html
-        -> child<xpath::test::node_type>(
-             xpath::node_type::node
+        -> child<::xpath::test::node_type>(
+             ::xpath::node_type::node
            );
       const auto begin = ax1->xbegin();
       const auto end = ax1->xend();
-#if 1
+#if 0
       copy(
         begin, end, 
         ostream_iterator<node>(cout, "\n")
@@ -451,6 +473,7 @@ TEST(Xpath, XpathIterator)
       EXPECT_NE(begin, end);
       EXPECT_EQ(-2, begin - end);
       EXPECT_EQ(2, end - begin);
+      EXPECT_EQ(2, ax1->xsize());
     }
   });
 }
