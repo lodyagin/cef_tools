@@ -37,15 +37,44 @@
 namespace xpath 
 {
 
-//! An xpath expression over Iterator
-template<class Iteratir>
-class expression
+//! A cycled iterator is that one which has
+//! end().ovf_equal(begin()) == true
+struct cycled_iterator_tag {};
+
+struct cycled_bidirectional_iterator_tag 
+  : std::bidirectional_iterator_tag,
+    cycled_iterator_tag
+{};
+
+struct cycled_random_access_iterator_tag
+  : std::random_access_iterator_tag,
+    cycled_iterator_tag
+{};
+
+//! An xpath expression over Iterator. 
+//! This version always returns `result'.
+//! @tparam Iterator is node_iterators::iterator, not
+//! xpath::iterator (the last will be created from this
+//! expression) 
+template<class Iterator, bool result>
+class constant_expression
 {
 public:
-  //! evaluate the expression over the iterator (as
-  //! true/false).
-  virtual bool operator()(Iterator it) const = 0;
+/*
+  template<class I, bool R>
+  using the_templ = constant_expression<I, R>;
+*/
+  virtual bool operator()(Iterator it) const
+  {
+    return result;
+  }
 };
+
+template<class It>
+using true_expression = constant_expression<It, true>;
+
+template<class It>
+using false_expression = constant_expression<It, false>;
 
 //! The special error value to mark uninitialized data.
 template<class Int>
@@ -169,24 +198,46 @@ public:
 
   node& operator=(const node& o) = default;
 
-  template<xpath::axis ax>
+  template<
+    xpath::axis ax, 
+    template<class> class Expr = xpath::false_expression
+  >
   class axis_;
 
-  std::shared_ptr<axis_<xpath::axis::self>> self() const;
+#define XPATH_INTERNAL_AXIS_DEF(ax) \
+  std::shared_ptr<                                      \
+    axis_<xpath::axis::ax/*, xpath::false_expression*/>   \
+  > ax() const;                                         \
+                                                        \
+  template<template<class> class Expr, class... Args>   \
+  std::shared_ptr<axis_<xpath::axis::ax, Expr>>         \
+  ax(Args&&... expr_args) const;
 
-  std::shared_ptr<axis_<xpath::axis::child>> child() const;
+#define XPATH_INTERNAL_AXIS_DECL(ax) \
+  template<class NodePtr>                                 \
+  std::shared_ptr<node<NodePtr>::axis_<axis::ax>>         \
+  node<NodePtr>::ax() const                               \
+  {                                                       \
+    return std::make_shared<axis_<xpath::axis::ax>>(dom); \
+  }                                                       \
+                                                          \
+  template<class NodePtr>                                 \
+  template<template<class> class Expr, class... Args>   \
+  std::shared_ptr<                                        \
+    node<NodePtr>::axis_<axis::ax, Expr>                  \
+  >                                                       \
+  node<NodePtr>::ax(Args&&... expr_args) const            \
+  {                                                       \
+    return std::make_shared<axis_<xpath::axis::ax>>       \
+      (dom, std::forward<Args>(expr_args)...);            \
+  }
 
-  std::shared_ptr<axis_<xpath::axis::descendant>> 
-  descendant() const;
-
-  std::shared_ptr<axis_<xpath::axis::attribute>> 
-  attribute() const;
-
-  std::shared_ptr<axis_<xpath::axis::following_sibling>> 
-  following_sibling() const;
-
-  std::shared_ptr<axis_<xpath::axis::preceding_sibling>> 
-  preceding_sibling() const;
+  XPATH_INTERNAL_AXIS_DEF(self);
+  XPATH_INTERNAL_AXIS_DEF(child);
+  XPATH_INTERNAL_AXIS_DEF(descendant);
+  XPATH_INTERNAL_AXIS_DEF(attribute);
+  XPATH_INTERNAL_AXIS_DEF(following_sibling);
+  XPATH_INTERNAL_AXIS_DEF(preceding_sibling);
 
   std::string tag_name() const
   {
@@ -416,7 +467,8 @@ public:
   using const_pointer = const xpath::node<NodePtr>*;
   using reference = xpath::node<NodePtr>;
   using const_reference = const xpath::node<NodePtr>;
-  using iterator_category = std::input_iterator_tag;
+  using iterator_category =
+    cycled_bidirectional_iterator_tag;
 
   static_assert(
     sizeof(size_type) == sizeof(difference_type),
@@ -474,6 +526,11 @@ public:
   child_path_t path() const
   {
     return child_path;
+  }
+
+  difference_type get_ovf() const
+  {
+    return ovf;
   }
 
 protected:
@@ -790,8 +847,6 @@ template<class NodePtr>
 class iterator<NodePtr, axis::following_sibling> 
   : public iterator_base<NodePtr>
 {
-//  friend class xpath::node<NodePtr>;
-
 public:
   iterator() noexcept {}
 
@@ -873,8 +928,6 @@ template<class NodePtr>
 class iterator<NodePtr, axis::preceding_sibling> 
   : public iterator_base<NodePtr>
 {
-//  friend class xpath::node<NodePtr>;
-
 public:
   iterator() noexcept {}
 
@@ -1132,6 +1185,24 @@ operator-(
   const random_access_adapter<It>& b
 );
 
+// select cycled/uncycled tag based on the Iterator
+// argument
+
+template<class BaseTag, class Cycled = void>
+struct random_access_adapter_iterator_category 
+  : std::random_access_iterator_tag
+{};
+
+template<class BaseTag>
+struct random_access_adapter_iterator_category<
+  BaseTag,
+  typename std::enable_if<
+    std::is_base_of<cycled_iterator_tag, BaseTag>::value
+  >::type
+>
+  : cycled_random_access_iterator_tag
+{};
+
 //! Makes a RandomAccessIterator 
 //! from a BidirectionalIterator
 template<class Iterator>
@@ -1155,7 +1226,9 @@ public:
   using typename Iterator::const_pointer;
   using typename Iterator::reference;
   using typename Iterator::const_reference;
-  using iterator_category =std::random_access_iterator_tag;
+  using iterator_category = 
+    node_iterators::random_access_adapter_iterator_category
+      <typename Iterator::iterator_category>;
 
   using Iterator::Iterator;
 
@@ -1187,14 +1260,7 @@ public:
 
   random_access_adapter& operator+=(difference_type n)
   {
-#if 1
-    std::advance(*this, n);
-#else
-    if (n > 0)
-      while (n--) ++(*this);
-    else if (n < 0)
-      while (n++) --(*this);
-#endif
+    std::advance((Iterator&)*this, n);
     return *this;
   }
 
@@ -1278,64 +1344,69 @@ operator-(
 //! match search to prevent an infinite loop.
 template<
   class It, 
-  template<class> class Expr,
-  int iteration_lim = 10000000
+  template<class> class Expr
 >
 class iterator  
 {
-  using TR = std::iterator_traits<It>;
-
 public:
   using expr_t = Expr<It>;
 
-  using TR::iterator_category; // NB
-  using TR::value_type;
-  using TR::difference_type;
-  using TR::pointer, TR::reference;
+  using iterator_category = 
+    typename It::iterator_category; // NB
+  using value_type = typename It::value_type;
+  using difference_type = typename It::difference_type;
+  using pointer = typename It::pointer;
+  using reference = typename It::reference;
+
+  static_assert(
+    std::is_base_of<
+      cycled_iterator_tag, 
+      iterator_category
+    >::value,
+    "It parameter of xpath::iterator "
+    "must be a cycled iterator "
+    "(because of empty_iterval logic)"
+  );
 
   //! constructs over the iterator, end limit and expression
-  explicit iterator(It x, It end_, const expr_t& expr_) 
-    : current(x), end(end_),
-      expr(expr_)
-  {}
-
-  //! constructs over the iterator, end limit and expression
-  explicit iterator(It x, It end_, expr_t&& expr_) 
-    : current(x), end(end_),
-      expr(std::move(expr_))
-  {}
-
-  template<class U>
-  iterator(const iterator<U>& other)
-    : current(other.base())
-  {}
-
-  template<class U>
-  iterator& operator = 
-    (const iterator<U>& other)
+  explicit iterator(It x, const expr_t& expr_) 
+    : current(x), 
+      expr(expr_),
+      empty_interval(skip_unmatched())
   {
-    current = other.base();
+    assert(expr(current));
   }
 
-  Iterator base() const
+  //! constructs over the iterator, end limit and expression
+  explicit iterator(It x, expr_t&& expr_) 
+    : current(x),
+      expr(std::move(expr_)),
+      empty_interval(skip_unmatched())
+  {
+    assert(expr(current));
+  }
+
+  It base() const
   {
     return current;
   }
 
-  reference operator * () const
+  reference operator*() const
   {
-    skip_unmatched();
+    SCHECK(!empty_interval);
+    assert(expr(current));
     return *current;
   }
 
-  pointer operator -> () const
+  pointer operator->() const
   {
     return &(operator*());
   }
 
   iterator& operator++()
   {
-    skip_unmatched(); next_matched();
+    assert(expr(current));
+    next_matched();
     return *this;
   }
 
@@ -1353,7 +1424,10 @@ public:
 
   iterator& operator+=(difference_type n)
   {
-    std::advance(*this, n);
+    if (n > 0)
+      while (n--) ++(*this);
+    else 
+      while (n++) --(*this);
     return *this;
   }
 
@@ -1370,7 +1444,8 @@ public:
 
   iterator& operator--()
   {
-    skip_unmatched_backward(); prev_matched();
+    assert(expr(current));
+    prev_matched();
     return *this;
   }
 
@@ -1408,34 +1483,34 @@ public:
   }
 
 protected:
-  //! if current is not matched with expr forward to the
-  //! first matched. NB do not check current.ovf, the
-  //! result needs to be comparend with axis_::xend().
-  void skip_unmatched()
+  //! If current is not matched with expr forwards to the
+  //! first matched (with possible one overflow). If no
+  //! matches return false.
+  bool skip_unmatched()
   {
-//    while(current != end && !expr(current))
-    
-    for (int k = 1; 
-         !expr(current) && k <= iteration_lim;
-         k++)
+    const auto max_ovf = current.get_ovf() + 1;
+    while(!expr(current)) {
       ++current;
-
-    if (k > iteration_lim)
-      THROW_PROGRAM_ERROR; //TODO specialize the expception
+      if (current.get_ovf() > max_ovf)
+        return false;
+    }
+    return true;
   }
 
   //! if current is not matched with expr backward to the
-  //! last matched. NB do not check current.ovf, the
-  //! result needs to be comparend with axis_::xend().
+  //! last matched.
   void skip_unmatched_backward()
   {
-    for (int k = 1; 
-         !expr(current) && k <= iteration_lim;
-         k++)
+    assert(!empty_interval);
+    const auto min_ovf = current.get_ovf() - 1;
+    while(!expr(current)) {
+
       --current;
 
-    if (k > iteration_lim)
-      THROW_PROGRAM_ERROR; //TODO specialize the expception
+      if (current.get_ovf() < min_ovf)
+        THROW_PROGRAM_ERROR; 
+        // must not be called when empty_iterval == true
+    }
   }
 
   //! Unconditionally forwards to the
@@ -1444,6 +1519,7 @@ protected:
   //! result needs to be comparend with axis_::xend().
   void next_matched()
   {
+    assert(!empty_interval);
     ++current;
     skip_unmatched();
   }
@@ -1452,32 +1528,61 @@ protected:
   //! previous iterator position matched with expr. 
   //! NB do not check current.ovf, the
   //! result needs to be comparend with axis_::xend().
-  void next_matched()
+  void prev_matched()
   {
+    assert(!empty_interval);
     --current;
     skip_unmatched_backward();
   }
 
   It current;
-  //! no iteration over end to use the standard STL loop
-  //! stopping condition (== end())
-  It end;
 
   expr_t expr;
+
+  //! begin = end, the current value is inaccessible
+  bool empty_interval;
 };
 
+template<class I, template<class> class Expr>
+bool operator==(
+  const iterator<I, Expr>& lhs, 
+  const iterator<I, Expr>& rhs
+)
+{
+  return lhs.empty_iterval == rhs.empty_interval
+    && lhs.base() == rhs.base();
+}
+
+template<class I, template<class> class Expr>
+bool operator!=(
+  const iterator<I, Expr>& lhs, 
+  const iterator<I, Expr>& rhs
+)
+{
+  return ! operator==(lhs, rhs);
+}
+
 template<class NodePtr>
-template<xpath::axis ax>
+template<
+  xpath::axis ax, 
+  template<class> class Expr // = xpath::false_expression
+>
 class node<NodePtr>::axis_
 {
 public:
   using iterator = node::iterator<ax>;
-
-  template<class Expr>
   using xiterator = xpath::iterator<iterator, Expr>;
+  using expr_t = Expr<iterator>;
 
-  explicit axis_(node dom_)
-    : dom(dom_)
+  explicit axis_(node dom_) 
+    : dom(dom_),
+      expr(xpath::false_expression<iterator>())
+  {}
+
+  template<class... Args>
+  explicit axis_(node dom_, Args&&... expr_args)
+    : dom(dom_),
+      expr(std::forward<Args>(expr_args)...)
   {}
 
   iterator begin()
@@ -1493,20 +1598,17 @@ public:
       );
   }
 
-  template<class Expr>
-  iterator xbegin(Expr&& expr)
+  iterator xbegin()
   {
-    return ++--xiterator(begin(),std::forward<Expr>(expr));
+    return xiterator(begin(), expr);
   }
 
   iterator xend()
   {
-    return iterator(
-      dom, 
-      node_iterators::end_t()
-      );
+    return xiterator(end(), expr);
   }
 
+  //! the number of nodes in the axis
   typename iterator::size_type size() //const
   {
     const auto dist = end() - begin();
@@ -1514,59 +1616,25 @@ public:
     return dist;
   }
 
+  //! the number of only expr matched nodes
+  typename iterator::size_type xsize() //const
+  {
+    const auto dist = xend() - xbegin();
+    SCHECK(dist >= 0);
+    return dist;
+  }
+
 protected:
-  node dom;
+  const node dom;
+  const expr_t expr;
 };
 
-template<class NodePtr>
-std::shared_ptr<node<NodePtr>::axis_<axis::self>> 
-node<NodePtr>::self() const
-{
-  return std::make_shared<axis_<xpath::axis::self>>(dom);
-}
-
-template<class NodePtr>
-std::shared_ptr<node<NodePtr>::axis_<axis::child>> 
-node<NodePtr>::child() const
-{
-  return std::make_shared<axis_<xpath::axis::child>>(dom);
-}
-
-template<class NodePtr>
-std::shared_ptr<node<NodePtr>::axis_<axis::descendant>> 
-node<NodePtr>::descendant() const
-{
-  return std::make_shared<axis_<xpath::axis::descendant>>
-    (dom);
-}
-
-template<class NodePtr>
-std::shared_ptr<node<NodePtr>::axis_<axis::attribute>> 
-node<NodePtr>::attribute() const
-{
-  return std::make_shared<axis_<xpath::axis::attribute>>
-    (dom);
-}
-
-template<class NodePtr>
-std::shared_ptr<node<NodePtr>
-::axis_<axis::following_sibling>> node<NodePtr>
-//
-::following_sibling() const
-{
-  return std::make_shared
-    <axis_<xpath::axis::following_sibling>> (dom);
-}
-
-template<class NodePtr>
-std::shared_ptr<node<NodePtr>
-::axis_<axis::preceding_sibling>> node<NodePtr>
-//
-::preceding_sibling() const
-{
-  return std::make_shared
-    <axis_<xpath::axis::preceding_sibling>> (dom);
-}
+XPATH_INTERNAL_AXIS_DECL(self);
+XPATH_INTERNAL_AXIS_DECL(child);
+XPATH_INTERNAL_AXIS_DECL(descendant);
+XPATH_INTERNAL_AXIS_DECL(attribute);
+XPATH_INTERNAL_AXIS_DECL(following_sibling);
+XPATH_INTERNAL_AXIS_DECL(preceding_sibling);
 
 // Must be in the namespace for Koeing lookup
 template<class NodePtr>
