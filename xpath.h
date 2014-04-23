@@ -45,25 +45,28 @@ struct cycled_random_access_iterator_tag
 //! @tparam Iterator is node_iterators::iterator, not
 //! xpath::iterator (the last will be created from this
 //! expression) 
-template<class Iterator, bool result>
+template<class Iterator>
 class constant_expression
 {
 public:
-/*
-  template<class I, bool R>
-  using the_templ = constant_expression<I, R>;
-*/
+  constant_expression(bool res) : result(res) {}
+  
   virtual bool operator()(Iterator it) const
   {
     return result;
   }
+
+protected:
+  const bool result;
 };
 
+/*
 template<class It>
 using true_expression = constant_expression<It, true>;
 
 template<class It>
 using false_expression = constant_expression<It, false>;
+*/
 
 //! The special error value to mark uninitialized data.
 template<class Int>
@@ -157,20 +160,28 @@ class node
 public:
   enum class type { not_valid, dom, attribute };
 
+#if 0
   template<xpath::axis axis>
   using iterator = node_iterators::random_access_adapter<
     node_iterators::iterator<NodePtr, axis>
   >;
+#else
+  template<xpath::axis axis>
+  using iterator = node_iterators::iterator<NodePtr, axis>;
+#endif
 
-  using self_iterator = iterator<axis::self>;
-  using child_iterator = iterator<axis::child>;
-  using descendant_iterator = iterator<axis::descendant>;
-  using attribute_iterator = iterator<axis::attribute>;
-  using following_sibling_iterator = 
-    iterator<axis::following_sibling>;
-  using preceding_sibling_iterator = 
-    iterator<axis::preceding_sibling>;
+#define XPATH_INTERNAL_ITERATOR_ALIAS(ax) \
+  using ax ## _iterator =                       \
+    node_iterators::random_access_adapter<      \
+      iterator<axis::ax>                        \
+    >;
 
+  XPATH_INTERNAL_ITERATOR_ALIAS(self);
+  XPATH_INTERNAL_ITERATOR_ALIAS(child);
+  XPATH_INTERNAL_ITERATOR_ALIAS(descendant);
+  XPATH_INTERNAL_ITERATOR_ALIAS(attribute);
+  XPATH_INTERNAL_ITERATOR_ALIAS(following_sibling);
+  XPATH_INTERNAL_ITERATOR_ALIAS(preceding_sibling);
 
   node(const node& o) = default;
 
@@ -189,7 +200,7 @@ public:
 
   template<
     xpath::axis ax, 
-    template<class> class Expr = xpath::false_expression
+    template<class> class Expr = xpath::constant_expression
   >
   class axis_;
 
@@ -517,9 +528,29 @@ public:
     return child_path;
   }
 
+  bool is_empty() const {
+    return empty;
+  }
+
+  bool is_same_context(const iterator_base& o) const
+  {
+    return context->IsSame(o.context);
+  }
+
   difference_type get_ovf() const
   {
     return ovf;
+  }
+
+  //! Two iterators are ovf_equal if they points to the
+  //! same node and/or attribute despite of ovf values.
+  bool ovf_equal(const iterator_base& o) const noexcept
+  {
+    assert(!empty);
+    assert(!o.empty);
+    assert(context->IsSame(o.context));
+    return current.attr_idx == o.current.attr_idx
+      && current->IsSame(o.current);
   }
 
 protected:
@@ -637,17 +668,6 @@ protected:
     child_path = child_path_t::uninitialized();
     LOG_TRACE(log, "CTX!");
     return true;
-  }
-
-  //! Two iterators are ovf_equal if they points to the
-  //! same node and/or attribute despite of ovf values.
-  bool ovf_equal(const iterator_base& o) const noexcept
-  {
-    assert(!empty);
-    assert(!o.empty);
-    assert(context->IsSame(o.context));
-    return current.attr_idx == o.current.attr_idx
-      && current->IsSame(o.current);
   }
 
   //! The context node is not used by some iterators (e.g.,
@@ -1208,7 +1228,12 @@ public:
       <typename Iterator::iterator_category>;
 
   using Iterator::Iterator;
-
+/*
+  using Iterator::is_empty;
+  using Iterator::is_same_context;
+  using Iterator::get_ovf;
+  using Iterator::ovf_equal;
+*/
   random_access_adapter& operator++()
   {
     Iterator::operator++();
@@ -1277,27 +1302,31 @@ operator-(
 )
 {
   // TODO specialized exceptions
-  SCHECK(!a.empty);
-  SCHECK(!b.empty);
+  SCHECK(!a.is_empty());
+  SCHECK(!b.is_empty());
+#if 0
   SCHECK(a.context->IsSame(b.context));
+#else
+  SCHECK(a.is_same_context(b));
+#endif
 
   typename It::difference_type cnt = 0;
   random_access_adapter<It> x = a;
-  const auto old_ovf = x.ovf;
+  const auto old_ovf = x.get_ovf();
   while (!x.ovf_equal(b)) {
-    if (x.ovf - old_ovf > 1) {
+    if (x.get_ovf() - old_ovf > 1) {
       // if context and iterator type is the same they
       // must be ovf_equal after finite number of steps
       THROW_PROGRAM_ERROR;
     }
-    assert(x.ovf >= old_ovf);
+    assert(x.get_ovf() >= old_ovf);
     ++x;
     ++cnt;
   }
   //LOG_TRACE(log, "cnt = " << cnt);
-  const auto ovf = x.ovf - old_ovf;
+  const auto ovf = x.get_ovf() - old_ovf;
   //LOG_TRACE(log, "ovf = " << ovf);
-  if (x.ovf == b.ovf) 
+  if (x.get_ovf() == b.get_ovf()) 
     return - cnt;
   else {
     // calculate a full cycle
@@ -1309,7 +1338,7 @@ operator-(
     } while (!x.ovf_equal(a));
 
     const auto cycle = cnt + cnt2;
-    return - (cnt + cycle * (b.ovf - a.ovf - ovf));
+    return - (cnt + cycle * (b.get_ovf() - a.get_ovf() - ovf));
   }
 }
 
@@ -1328,44 +1357,71 @@ class iterator
 public:
   using expr_t = Expr<It>;
 
-  using iterator_category = 
-    typename It::iterator_category; // NB
+  using node_ptr_type = typename It::node_ptr_type;
   using value_type = typename It::value_type;
   using difference_type = typename It::difference_type;
   using pointer = typename It::pointer;
   using reference = typename It::reference;
+  using size_type = typename It::size_type;
+  using const_pointer = typename It::const_pointer;
+  using const_reference = typename It::const_reference;
 
   static_assert(
     std::is_base_of<
       cycled_iterator_tag, 
-      iterator_category
+      typename It::iterator_category
     >::value,
     "It parameter of xpath::iterator "
     "must be a cycled iterator "
     "(because of empty_iterval logic)"
   );
+  
+  // NB hides random access from It
+  using iterator_category = 
+    cycled_bidirectional_iterator_tag;
 
   //! constructs over the iterator, end limit and expression
   explicit iterator(It x, const expr_t& expr_) 
     : current(x), 
       expr(expr_),
-      empty_interval(skip_unmatched())
+      empty_interval(!skip_unmatched())
   {
-    assert(expr(current));
+    assert(empty_interval || expr(current));
   }
 
   //! constructs over the iterator, end limit and expression
   explicit iterator(It x, expr_t&& expr_) 
     : current(x),
       expr(std::move(expr_)),
-      empty_interval(skip_unmatched())
+      empty_interval(!skip_unmatched())
   {
-    assert(expr(current));
+    assert(empty_interval || expr(current));
   }
 
   It base() const
   {
     return current;
+  }
+
+  // forward calls to current
+
+  bool is_empty() const {
+    return empty_interval; // NB
+  }
+
+  bool is_same_context(const iterator& o) const
+  {
+    return current.is_same_context(o.current);
+  }
+
+  difference_type get_ovf() const
+  {
+    return current.get_ovf();
+  }
+
+  bool ovf_equal(const iterator& o) const
+  {
+    return current.ovf_equal(o.current);
   }
 
   reference operator*() const
@@ -1399,6 +1455,7 @@ public:
     return *this;
   }
 
+#if 0
   iterator& operator+=(difference_type n)
   {
     if (n > 0)
@@ -1418,6 +1475,7 @@ public:
   {
     return operator+=(n);
   }
+#endif
 
   iterator& operator--()
   {
@@ -1438,6 +1496,18 @@ public:
     return *this;
   }
 
+  bool operator==(const iterator& o) const
+  {
+    return (empty_interval && o.empty_interval)
+      || (base() == o.base());
+  }
+
+  bool operator!=(const iterator& o) const
+  {
+    return !operator==(o);
+  }
+
+#if 0
   iterator& operator-=(difference_type n)
   {
     return operator+=(-n);
@@ -1458,6 +1528,7 @@ public:
   {
     return *(*this + n);
   }
+#endif
 
 protected:
   //! If current is not matched with expr forwards to the
@@ -1520,25 +1591,6 @@ protected:
   bool empty_interval;
 };
 
-template<class I, template<class> class Expr>
-bool operator==(
-  const iterator<I, Expr>& lhs, 
-  const iterator<I, Expr>& rhs
-)
-{
-  return lhs.empty_iterval == rhs.empty_interval
-    && lhs.base() == rhs.base();
-}
-
-template<class I, template<class> class Expr>
-bool operator!=(
-  const iterator<I, Expr>& lhs, 
-  const iterator<I, Expr>& rhs
-)
-{
-  return ! operator==(lhs, rhs);
-}
-
 template<class NodePtr>
 template<
   xpath::axis ax, 
@@ -1547,13 +1599,29 @@ template<
 class node<NodePtr>::axis_
 {
 public:
+#if 0
   using iterator = node::iterator<ax>;
-  using xiterator = xpath::iterator<iterator, Expr>;
+#else
+  using iterator = node_iterators::random_access_adapter<
+    node::iterator<ax>
+  >;
+#endif
+#if 0
+  using xiterator = node_iterators::random_access_adapter<
+    xpath::iterator<node::iterator<ax>, Expr>
+  >;
+#else
+  // NB Expr can use random access iterator internally
+  using xiterator = node_iterators::random_access_adapter<
+    xpath::iterator<iterator, Expr>
+  >;
+#endif
+
   using expr_t = Expr<iterator>;
 
   explicit axis_(node dom_) 
     : dom(dom_),
-      expr(xpath::false_expression<iterator>())
+      expr(false)
   {}
 
   template<class... Args>
@@ -1575,12 +1643,12 @@ public:
       );
   }
 
-  iterator xbegin()
+  xiterator xbegin()
   {
     return xiterator(begin(), expr);
   }
 
-  iterator xend()
+  xiterator xend()
   {
     return xiterator(end(), expr);
   }

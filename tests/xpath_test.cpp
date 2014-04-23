@@ -406,6 +406,28 @@ TEST(Xpath, NodeAttributes)
   });
 }
 
+TEST(Xpath, XpathIterator)
+{
+  test_dom([](CefRefPtr<CefDOMNode> r)
+  {
+    {
+      // self axis
+      const auto html = node(r).child()->begin() + 2;
+      const auto begin = html->self<xpath::constant_expression>(false)->xbegin();
+      const auto end = html->self<xpath::constant_expression>(false)->xend();
+      EXPECT_EQ(begin, end);
+      //EXPECT_EQ(0, begin - end); //TODO check exception
+      //EXPECT_EQ(0, end - begin);
+
+      const auto begin1 = html->self<xpath::constant_expression>(true)->xbegin();
+      const auto end1 = html->self<xpath::constant_expression>(true)->xend();
+      EXPECT_NE(begin1, end1);
+      EXPECT_EQ(-1, begin1 - end1);
+      EXPECT_EQ(1, end1 - begin1);
+    }
+  });
+}
+
 std::atomic<int> test_result(13);
 
 class test_runner : public CefTask
