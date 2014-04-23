@@ -24,7 +24,6 @@ add_subdirectory(tests)
 set(offscreen_SOURCES
     browser.cpp
     dom_event.cpp
-    search.cpp
     offscreen.cpp
     proc_browser.cpp
     screenshotter.cpp
