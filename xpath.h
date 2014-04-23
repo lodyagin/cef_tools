@@ -37,6 +37,11 @@
 namespace xpath 
 {
 
+//! An xpath expression
+class xpath_expr_t
+{
+};
+
 //! The special error value to mark uninitialized data.
 template<class Int>
 constexpr static Int uninitialized(Int)
@@ -277,6 +282,15 @@ public:
     return dom;
   }
 
+  //! Access the attribute value by name
+  //! @return the attribute value or empty string
+  std::string operator[](const std::string& name) const
+  {
+    check_load_attributes();
+    const auto p = attr_map.find(name);
+    return p != attr_map.end() ? p->second : std::string();
+  }
+
   //! reloads itself with the first child if any or
   //! returns false 
   bool go_first_child() noexcept
@@ -339,6 +353,29 @@ protected:
       && dom.get() != nullptr;
   }
 
+  //! Loads all attributes into attr_map if it was empty
+  //! only
+  void check_load_attributes() const
+  {
+    if (!attr_map.empty())
+      return;
+
+    const int n = n_attrs();
+    
+    CefString name, value;
+    for (int i = 0; i < n; i++) {
+      dom->GetElementAttributeByIdx(i, name, value);
+      auto p = attr_map.emplace(
+        name.ToString(), 
+        value.ToString()
+      );
+      if (!p.second) {
+        LOG_WARN(log, "the " << tag_name() 
+          << " tag have repeated attributes");
+      }
+    }
+  }
+
   NodePtr dom;
 
   //! depth to context_node if it is a result of xpath
@@ -349,6 +386,12 @@ protected:
 
   //! the attribute sequence number
   int attr_idx = 0; 
+
+  //! name-values pairs for all attributes
+  mutable std::map<std::string, std::string> attr_map;
+
+private:
+  using log = curr::Logger<node<NodePtr>>;
 };
 
 namespace node_iterators {
@@ -1365,17 +1408,9 @@ namespace dom_visitor {
 class wrap : public CefRefPtr<CefDOMNode>
 {
 public:
-  wrap(const CefRefPtr& o) : CefRefPtr(o) {}
-
-/*
-  wrap& operator=(CefRefPtr o)
-  {
-    swap(o);
-    return *this;
-  }
-*/
-
   using CefRefPtr::CefRefPtr;
+
+  wrap(const CefRefPtr& o) : CefRefPtr(o) {}
 
   operator bool() const
   {

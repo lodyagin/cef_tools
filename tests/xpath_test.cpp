@@ -388,6 +388,26 @@ TEST(Xpath, AttributeAxis) {
   });
 }
 
+TEST(Xpath, Expression)
+{
+  test_dom([](CefRefPtr<CefDOMNode> r)
+  {
+    // output all 'a' tags hrefs
+    auto descendant = node(r).descendant();
+    int cnt1 = 0, cnt2 = 0;
+    for (const auto& n : *descendant) {
+      if (n.tag_name() != "a") continue;
+#if 0
+      std::cout << n["href"] << std::endl;
+#endif
+      cnt1++;
+      if (n["href"].substr(0, 4) == "http") cnt2++;
+    }
+    EXPECT_EQ(cnt1, 12);
+    EXPECT_EQ(cnt2, 10);
+  });
+}
+
 std::atomic<int> test_result(13);
 
 class test_runner : public CefTask
