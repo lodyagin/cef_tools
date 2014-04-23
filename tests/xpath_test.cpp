@@ -110,7 +110,7 @@ TEST(Xpath, SelfAxis) {
 
     EXPECT_EQ(".", (std::string) begin.path());
 
-#ifndef XPATH_OVF_ASSERT
+    // ovf test
     {
       auto it = begin;
       --it; ++it;
@@ -119,7 +119,6 @@ TEST(Xpath, SelfAxis) {
       ++it2; --it2;
       EXPECT_EQ(it2, end);
     }
-#endif
   });
 }
 
@@ -357,7 +356,7 @@ TEST(Xpath, AttributeAxis) {
       EXPECT_EQ(begin, end);
     }
 
-#ifndef XPATH_OVF_ASSERT
+    // ovf test
     {
       const auto begin = html->attribute()->begin();
       const auto end = html->attribute()->end();
@@ -378,7 +377,6 @@ TEST(Xpath, AttributeAxis) {
       ++it2; --it2;
       EXPECT_EQ(end, it2);
     }
-#endif
 
     distance_test(
       html->attribute()->begin(),

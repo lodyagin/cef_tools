@@ -23,17 +23,6 @@
 #include "SCheck.h"
 #include "SCommon.h"
 
-//! [begin, end) overflow on iterator movement assertion
-//! (it will always raise an exception on data access
-//! anyway)
-//#define XPART_OVF_ASSERT
-
-#ifndef XPATH_OVF_ASSERT
-#  define ovf_assert(x)
-#else
-#  define ovf_assert(x) assert(x)
-#endif
-
 namespace xpath 
 {
 
@@ -702,7 +691,6 @@ public:
   iterator& operator++() noexcept
   {
     ++(this->ovf);
-    ovf_assert(this->ovf == 1);
     return *this;
   }
 
@@ -716,7 +704,6 @@ public:
   iterator& operator--() noexcept
   {
     --(this->ovf);
-    ovf_assert(this->ovf == 0);
     return *this;
   }
 
@@ -775,7 +762,6 @@ public:
         ++(this->ovf);
       }
     }
-    ovf_assert(this->ovf);
     return *this;
   }
 
@@ -802,7 +788,6 @@ public:
         --(this->ovf);
       }
     }
-    ovf_assert(this->ovf);
     return *this;
   }
 
@@ -859,7 +844,6 @@ public:
       this->go_next_sibling();
       ++(this->ovf);
     }
-    ovf_assert(this->ovf);
     return *this;
   }
 
@@ -883,7 +867,6 @@ public:
       }
       --(this->ovf);
     }
-    ovf_assert(this->ovf);
     return *this;
   }
 
@@ -940,7 +923,6 @@ public:
       this->go_prev_sibling();
       ++(this->ovf);
     }
-    ovf_assert(this->ovf);
     return *this;
   }
 
@@ -961,7 +943,6 @@ public:
         ;
       --(this->ovf);
     }
-    ovf_assert(this->ovf);
     return *this;
   }
 
@@ -1014,7 +995,6 @@ public:
   {
     if (this->current->IsSame(this->context)) {
       ++(this->ovf);
-      ovf_assert(this->ovf);
       LOG_TRACE(log, "O" << this->ovf);
     }
 
@@ -1048,7 +1028,6 @@ public:
         ++(this->ovf);
       }
     }
-    ovf_assert(this->ovf);
     return *this;
   }
 
@@ -1123,7 +1102,6 @@ public:
       idx = 0;
       ++(this->ovf);
     }
-    ovf_assert(this->ovf);
     return *this;
   }
 
@@ -1144,7 +1122,6 @@ public:
       idx = m;
       --(this->ovf);
     }
-    ovf_assert(this->ovf);
     return *this;
   }
 
