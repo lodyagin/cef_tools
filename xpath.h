@@ -1774,15 +1774,9 @@ struct iterator
   {}
 };
 
-//! An xpath one-step query. The last predicate is xpath
-//! test, the rest are xpath predicates.
-template<class NodePtr, class axis, class... Preds> 
-class query
-{
-};
-
+//! An xpath one-step query. 
 template<class NodePtr, class axis, class Test>
-class query<NodePtr, axis, Test>
+class query
 {
 public:
   using iterator = step::iterator<NodePtr, axis, Test>;
@@ -1810,64 +1804,7 @@ protected:
 
 template<
   class NodePtr, 
-  class axis, 
-  class Pred0,
-  class... Preds // the last is Test
->
-class query<NodePtr, axis, Pred0, Preds...>
-  : public query<NodePtr, axis, Preds...>
-{
-public:
-  using iterator = step::iterator
-    <NodePtr, axis, Pred0, Preds...>;
-  using nested_query = query<NodePtr, axis, Preds...>;
-
-  query(const node<NodePtr>& ctx, Pred0&& p0,Preds&&... ps) 
-    : nested_query(ctx, std::forward<Preds>(ps)...),
-      test(std::forward<Pred0>(p0))
-  {}
-
-  iterator begin()
-  {
-    return iterator(nested_query::begin(), test);
-  }
-
-  iterator end()
-  {
-    return iterator(nested_query::end(), test);
-  }
-
-#if 0
-  //! Returns the number of nodes
-  //! If args are not null returns begin() and end()
-  //! values also.
-  size_type size(
-    iterator* bg_ = nullptr,
-    iterator* nd_ = nullptr
-  )
-  {
-    const auto bg = begin();
-    const auto nd = end();
-
-    if (bg_) *bg_ = bg;
-    if (nd_) *nd_ = bg;
-
-    if (bg.is_empty())
-      return 0;
-
-    const auto dist = nd - bg;
-    SCHECK(dist >= 0);
-    return dist;
-  }
-#endif
-protected:
-  const Pred0 test;
-};
-
-template<
-  class NodePtr, 
   class NestedQuery,
-//  class axis, 
   class Expr
 >
 class query1 : public NestedQuery
@@ -1897,6 +1834,30 @@ public:
 protected:
   const Expr test;
 };
+
+//! Returns the number of nodes
+//! If pointer args are not null returns begin() and end()
+//! values also.
+template<class Query>
+typename Query::iterator::size_type size(
+  /*const*/ Query& q,
+  typename Query::iterator* bg_ = nullptr,
+  typename Query::iterator* nd_ = nullptr
+)
+{
+    const auto bg = q.begin();
+    const auto nd = q.end();
+
+    if (bg_) *bg_ = bg;
+    if (nd_) *nd_ = bg;
+
+    if (bg.is_empty())
+      return 0;
+
+    const auto dist = nd - bg;
+    SCHECK(dist >= 0);
+    return dist;
+}
 
 template<
   class NodePtr,

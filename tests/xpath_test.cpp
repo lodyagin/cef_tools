@@ -485,7 +485,6 @@ TEST(Xpath, Query)
     using namespace renderer::dom_visitor;
     using namespace ::xpath::step;
     using namespace ::xpath;
-    using node = renderer::dom_visitor::node;
 
     // double-checkin query
     auto q = 
@@ -498,13 +497,14 @@ TEST(Xpath, Query)
       )
     );
 
-#if 1
+#if 0
+    using node = renderer::dom_visitor::node;
     copy(q.begin(), q.end(), 
       ostream_iterator<node>(cout, "\n")
     );
 #endif
 
-    //EXPECT_EQ(12, q.size());
+    EXPECT_EQ(12, size(q));
         
   });
 }
