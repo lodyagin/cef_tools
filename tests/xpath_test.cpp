@@ -488,38 +488,36 @@ TEST(Xpath, Query)
     using node = renderer::dom_visitor::node;
 
     // double-checkin query
-    auto q = 
+    auto qr = 
     build_query<::xpath::test::name>(
       "a",
       build_query<axis::descendant, ::xpath::test::name>(
-        renderer::dom_visitor::node(r),
         std::string("a"),
         true
       )
-    );
+    ).execute(renderer::dom_visitor::node(r));
 
 #if 0
-    copy(q.begin(), q.end(), 
+    copy(qr.begin(), qr.end(), 
       ostream_iterator<node>(cout, "\n")
     );
 #endif
 
-    EXPECT_EQ(12, size(q));
+    EXPECT_EQ(12, size<decltype(qr)::query_type>(qr));
 
-    auto q2 = 
+    auto qr2 = 
     build_query<::xpath::test::fun>(
       [](const node::generic_iterator& it)
       {
         return (*it)["href"].substr(0, 4) == "http";
       },
       build_query<axis::descendant, ::xpath::test::name>(
-        renderer::dom_visitor::node(r),
         "a",
         true
       )
-    );
+    ).execute(renderer::dom_visitor::node(r));
 
-    EXPECT_EQ(10, size(q2));
+    EXPECT_EQ(10, qr2.size());
   });
 }
 
@@ -530,13 +528,14 @@ TEST(Xpath, NodeCreationInRepository)
 
   node_repository::instance().query(
     browser_id,
-    build_query<::xpath::test::fun>(
-      [](const node::generic_iterator& it)
+    dom_visitor::build_query<::xpath::test::fun>(
+      [](const dom_visitor::node::generic_iterator& it)
       {
         return (*it)["href"].substr(0, 4) == "http";
       },
-      build_query<axis::descendant, ::xpath::test::name>(
-        renderer::dom_visitor::node(r),
+      dom_visitor::build_query
+        <xpath::axis::descendant, xpath::test::name>
+      (
         "a",
         true
       )

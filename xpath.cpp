@@ -19,9 +19,8 @@ namespace xpath {
 std::ostream&
 operator<< (std::ostream& out, const child_path_t& path)
 {
-  assert(path.size() >= 1);
   if (path.size() == 0)
-    out << '?';
+    out << "?empty?";
   else if (path.size() == 1)
     out << '.';
   else {

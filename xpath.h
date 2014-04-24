@@ -63,7 +63,8 @@ enum class node_type {
   text, 
   processing_instruction,
   node,
-  other_type
+  other_type,
+  unknown_type
 };
 
 //! [7] NodeTest
@@ -81,7 +82,7 @@ public:
   template<class I>
   using the_template = constant<I>;
 
-  constant(bool res) : result(res) {}
+  constant(bool res = false) : result(res) {}
   
   bool operator()(Iterator it) const
   {
@@ -102,6 +103,7 @@ public:
 
   using type = xpath::node_type;
 
+  node_type() : the_type(node_type::unknown_type) {}
   node_type(type a_type) : the_type(a_type) {}
 
   bool operator()(It it) const
@@ -127,8 +129,17 @@ public:
   template<class I>
   using the_template = name<I>;
 
-  name(const std::string& nm) : the_name(nm) {}
-  name(std::string&& nm) : the_name(std::move(nm)) {}
+  name() : inited(false) {}
+
+  name(const std::string& nm) 
+    : inited(true),
+      the_name(nm) 
+  {}
+
+  name(std::string&& nm) 
+    : inited(true),
+      the_name(std::move(nm)) 
+  {}
 
   bool operator()(It it) const
   {
@@ -139,6 +150,7 @@ public:
   }
 
 protected:
+  bool inited;
   std::string the_name;
 
 private:
@@ -159,6 +171,10 @@ public:
   using function_t = std::function<
     bool(const generic_iterator&)
   >;
+
+  fun() 
+    : fun([](const generic_iterator&){ return false; })
+  {}
 
   fun(const function_t& f) : function(f) {}
     
@@ -189,6 +205,8 @@ class child_path_t : public std::list<node_difference_type>
 {
 public:
   using std::list<node_difference_type>::list;
+
+  child_path_t() {}
 
   child_path_t(node_difference_type idx)
   {
@@ -269,6 +287,8 @@ public:
   XPATH_INTERNAL_ITERATOR_ALIAS(attribute);
   XPATH_INTERNAL_ITERATOR_ALIAS(following_sibling);
   XPATH_INTERNAL_ITERATOR_ALIAS(preceding_sibling);
+
+  node() {}
 
   node(const node& o) = default;
 
@@ -507,13 +527,13 @@ public:
     else return false;
   }
 
-protected:
   bool is_valid() const
   {
     return the_type != itype::not_valid
       && dom.get() != nullptr;
   }
 
+protected:
   //! Loads all attributes into attr_map if it was empty
   //! only
   void check_load_attributes() const
@@ -1480,6 +1500,8 @@ public:
   using iterator_category = 
     cycled_bidirectional_iterator_tag;
 
+  iterator() : empty_interval(true) {}
+
   //! constructs over the iterator, end limit and test
   explicit iterator(It x, const test_t& test_) 
     : current(x), 
@@ -1496,6 +1518,11 @@ public:
       empty_interval(!skip_unmatched())
   {
     assert(empty_interval || test(current));
+  }
+
+  child_path_t path() const
+  {
+    return current.path();
   }
 
   const It& base() const
@@ -1735,6 +1762,8 @@ struct iterator<NodePtr, axis, Test>
   using step1_iterator = 
     step1_iterator_t<NodePtr, axis, Test>;
 
+  iterator() {}
+
   iterator(
     const node<NodePtr>& context, 
     const Test& test
@@ -1808,6 +1837,30 @@ struct iterator
   {}
 };
 
+//! Returns the number of nodes
+//! If pointer args are not null returns begin() and end()
+//! values also.
+template<class Query>
+typename Query::iterator::size_type size(
+  typename Query::result& qr,
+  typename Query::iterator* bg_ = nullptr,
+  typename Query::iterator* nd_ = nullptr
+)
+{
+    const auto bg = qr.begin();
+    const auto nd = qr.end();
+
+    if (bg_) *bg_ = bg;
+    if (nd_) *nd_ = bg;
+
+    if (bg.is_empty())
+      return 0;
+
+    const auto dist = nd - bg;
+    SCHECK(dist >= 0);
+    return dist;
+}
+
 //! An xpath query. 
 template<
   class NodePtr, 
@@ -1825,24 +1878,55 @@ class query<NodePtr, Expr, axis, true>
 public:
   using iterator = step::iterator<NodePtr, axis, Expr>;
 
-  query(const node<NodePtr>& ctx, Expr&& tst) 
-    : context(ctx),
-      test(std::forward<Expr>(tst))
+  struct result
+  {
+    using query_type = query<NodePtr, Expr, axis, true>;
+
+    result() {}
+
+    result(const node<NodePtr>& ctx, const Expr& tst) 
+      : context(ctx), test(tst)
+    {}
+
+    iterator begin()
+    {
+      SCHECK(context.is_valid());
+      return iterator(context, test);
+    }
+
+    iterator end()
+    {
+      SCHECK(context.is_valid());
+      return iterator(
+        node_iterators::end_t(),
+        context,
+        test
+      );
+    }
+
+    typename iterator::size_type size(
+      iterator* bg = nullptr,
+      iterator* nd = nullptr
+    )
+    {
+      return step::size<query_type>(*this, bg, nd);
+    }
+
+    node<NodePtr> context;
+    Expr test;
+  };
+
+  query(Expr&& tst) 
+    : test(std::forward<Expr>(tst))
   {}
 
-  iterator begin()
+  result execute(const node<NodePtr>& ctx) const
   {
-    return iterator(context, test);
-  }
-
-  iterator end()
-  {
-    return iterator(node_iterators::end_t(),context, test);
+    return result(ctx, test);
   }
 
 protected:
-  const node<NodePtr> context;
-  Expr test;
+  const Expr test;
 };
 
 
@@ -1860,49 +1944,62 @@ public:
     Expr
   >;
   using nested_query = NestedQuery;
+  using nested_result = typename NestedQuery::result;
+
+  struct result : nested_result
+  {
+    using query_type = 
+      query<NodePtr, Expr, NestedQuery, false>;
+
+    result() {}
+
+    result(
+      const node<NodePtr>& ctx, 
+      const Expr& tst,
+      nested_result&& nested
+    ) 
+      : nested_result(std::move(nested)),
+        context(ctx), 
+        test(tst)
+    {}
+
+    iterator begin()
+    {
+      SCHECK(context.is_valid());
+      return iterator(nested_result::begin(), test);
+    }
+
+    iterator end()
+    {
+      SCHECK(context.is_valid());
+      return iterator(nested_result::end(), test);
+    }
+
+    typename iterator::size_type size(
+      iterator* bg = nullptr,
+      iterator* nd = nullptr
+    )
+    {
+      return step::size<query_type>(*this, bg, nd);
+    }
+
+    node<NodePtr> context;
+    Expr test;
+  };
 
   query(Expr&& e, NestedQuery&& nq) 
     : NestedQuery(std::forward<NestedQuery>(nq)),
       test(std::forward<Expr>(e))
   {}
 
-  iterator begin()
+  result execute(const node<NodePtr>& ctx) const
   {
-    return iterator(nested_query::begin(), test);
-  }
-
-  iterator end()
-  {
-    return iterator(nested_query::end(), test);
+    return result(ctx, test, NestedQuery::execute(ctx));
   }
 
 protected:
   const Expr test;
 };
-
-//! Returns the number of nodes
-//! If pointer args are not null returns begin() and end()
-//! values also.
-template<class Query>
-typename Query::iterator::size_type size(
-  /*const*/ Query& q,
-  typename Query::iterator* bg_ = nullptr,
-  typename Query::iterator* nd_ = nullptr
-)
-{
-    const auto bg = q.begin();
-    const auto nd = q.end();
-
-    if (bg_) *bg_ = bg;
-    if (nd_) *nd_ = bg;
-
-    if (bg.is_empty())
-      return 0;
-
-    const auto dist = nd - bg;
-    SCHECK(dist >= 0);
-    return dist;
-}
 
 template<
   class NodePtr,
@@ -1917,7 +2014,6 @@ query<
     true
 >
 build_query(
-  const node<NodePtr>& ctx, 
   TestArg&& test_arg,
   bool
 )
@@ -1929,7 +2025,6 @@ build_query(
     true
   > 
   (
-    ctx, 
     Test<prim_iterator_t<NodePtr, axis>>
       (std::forward<TestArg>(test_arg))
   );
