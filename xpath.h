@@ -145,6 +145,32 @@ private:
   using log = curr::Logger<name>;
 };
 
+//! Test with a callback function
+template<class It>
+class fun
+{
+public:
+  template<class I>
+  using the_template = fun<I>;
+
+  using generic_iterator =
+    typename It::value_type::generic_iterator;
+
+  using function_t = std::function<
+    bool(const generic_iterator&)
+  >;
+
+  fun(const function_t& f) : function(f) {}
+    
+  bool operator()(const It& it) const
+  {
+    return function(it.base());
+  }
+
+protected:
+  function_t function;
+};
+
 } // test
 
 //! The special error value to mark uninitialized data.
@@ -221,6 +247,9 @@ class node
 
 public:
   using type = xpath::node_type;
+
+  using generic_iterator = node_iterators::iterator_base
+    <NodePtr>;
 
   //! internal type
   enum class itype { not_valid, dom, attribute };
@@ -598,6 +627,11 @@ public:
   child_path_t path() const
   {
     return child_path;
+  }
+
+  const iterator_base& base() const
+  {
+    return *this;
   }
 
   bool is_empty() const {
@@ -1464,7 +1498,7 @@ public:
     assert(empty_interval || test(current));
   }
 
-  It base() const
+  const It& base() const
   {
     return current;
   }

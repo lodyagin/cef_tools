@@ -485,6 +485,7 @@ TEST(Xpath, Query)
     using namespace renderer::dom_visitor;
     using namespace ::xpath::step;
     using namespace ::xpath;
+    using node = renderer::dom_visitor::node;
 
     // double-checkin query
     auto q = 
@@ -498,14 +499,28 @@ TEST(Xpath, Query)
     );
 
 #if 0
-    using node = renderer::dom_visitor::node;
     copy(q.begin(), q.end(), 
       ostream_iterator<node>(cout, "\n")
     );
 #endif
 
     EXPECT_EQ(12, size(q));
-        
+
+    auto q2 = 
+    build_query<::xpath::test::fun>(
+      [](const node::generic_iterator& it)
+      {
+        return (*it)["href"].substr(0, 4) == "http";
+      },
+      build_query<axis::descendant, ::xpath::test::name>(
+        renderer::dom_visitor::node(r),
+        std::string("a"),
+        true
+      )
+    );
+
+    EXPECT_EQ(10, size(q2));
+
   });
 }
 
