@@ -35,8 +35,8 @@ public:
   node_id_t() {}
 
   node_id_t(const ::xpath::child_path_t& p)
-    : vector(p.size() - 1)
   {
+    reserve(10);
     auto bg = p.begin();
     std::copy(
       ++bg, p.end(), 
@@ -212,7 +212,10 @@ public:
     const curr::ObjectCreationInfo& oi
   ) const override
   {
-    LOG_TRACE(log, "get_id");
+    LOG_TRACE(log, 
+      "get_id " << cur.path()
+      << " -> " << shared::node_id_t(cur.path())
+    );
     return cur.path();
   }
 
@@ -221,7 +224,7 @@ public:
   ) override
   {
     LOG_TRACE(log, 
-      "create_next_derivation"
+      "create_next_derivation "
       << "cur.path() == " << cur.path()
       << ", oi.objectId == " << oi.objectId
     );

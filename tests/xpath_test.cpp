@@ -526,7 +526,7 @@ TEST(Xpath, NodeCreationInRepository)
   using namespace renderer;
   using namespace shared;
 
-  node_repository::instance().query(
+  auto list = node_repository::instance().query(
     browser_id,
     dom_visitor::build_query<::xpath::test::fun>(
       [](const dom_visitor::node::generic_iterator& it)
@@ -541,6 +541,12 @@ TEST(Xpath, NodeCreationInRepository)
       )
     )
   );
+
+#if 0
+  for (auto ptr : list)
+    std::cout << ptr->universal_id() << '\t' 
+    << *ptr << std::endl;
+#endif
 
   EXPECT_EQ(10, node_repository::instance().size());
 }
