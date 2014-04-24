@@ -29,7 +29,7 @@ class node_ptr;
 
 class node
 {
-  template<xpath::axis ax, class Test>
+  template<class axis, class Test>
   friend class path;
 
 public:
@@ -63,60 +63,6 @@ public:
 };
 
 using node = ::xpath::node<wrap>;
-
-namespace xpath {
-
-//! [14] Expr
-namespace expr {
-
-//! [1] LocationPath (both absolute and relative - it is
-//! based on the context node passed to the constructor)
-template<::xpath::axis ax, class Test>
-class path // TODO multistep
-{
-public:
-  using axis_t = 
-    node::axis_t<ax, Test::template the_template>;
-
-  template<class... Args>
-  path(wrap ctx, Args&&... test_args) 
-    : test(std::forward<Args>(test_args)...),
-      context(ctx)
-  {}
-
-  size_t n_objects(const curr::ObjectCreationInfo& oi)
-  {
-    const auto n = axis_t(context).xsize(&cur);
-    SCHECK(n >= 0);
-    return (size_t) n;
-  }
-
-  shared::node* create_next_derivation(
-    const curr::ObjectCreationInfo& oi
-  )
-  {
-    assert(cur.get_ovf() == 0);
-    return new shared::node(cur++);
-  }
-
-  shared::node* create_derivation
-    (const curr::ObjectCreationInfo& oi) const
-  { THROW_NOT_IMPLEMENTED; }
-
-  shared::node* transform_object
-    (const shared::node*) const
-  { THROW_NOT_IMPLEMENTED; }
-
-protected:
-  Test test;
-  //! the context node
-  renderer::dom_visitor::node context;
-  typename axis_t::xiterator cur;
-};
-
-} // expr
-
-}
 
 }}
 

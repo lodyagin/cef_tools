@@ -41,21 +41,21 @@ struct cycled_random_access_iterator_tag
 {};
 
 //! xpath axes
-enum class axis {
-  ancestor,
-  ancestor_or_self,
-  attribute,
-  child,
-  descendant,
-  descendant_or_self,
-  following,
-  following_sibling,
-  namespace_axis,
-  parent,
-  preceding,
-  preceding_sibling,
-  self
-};
+namespace axis {
+struct  ancestor {};
+struct  ancestor_or_self {};
+struct  attribute {};
+struct  child {};
+struct  descendant {};
+struct  descendant_or_self {};
+struct  following {};
+struct  following_sibling {};
+struct  namespace_axis {};
+struct  parent {};
+struct  preceding {};
+struct  preceding_sibling {};
+struct  self {};
+}
 
 //! [38] (xpath) NodeType
 enum class node_type { 
@@ -160,7 +160,7 @@ struct end_t {};
 template<class NodePtr>
 class iterator_base;
 
-template<class NodePtr, xpath::axis axis> 
+template<class NodePtr, class axis> 
 class iterator;
 
 template<class Iterator>
@@ -193,15 +193,8 @@ public:
   //! internal type
   enum class itype { not_valid, dom, attribute };
 
-#if 0
-  template<xpath::axis axis>
-  using iterator = node_iterators::random_access_adapter<
-    node_iterators::iterator<NodePtr, axis>
-  >;
-#else
-  template<xpath::axis axis>
+  template<class axis>
   using iterator = node_iterators::iterator<NodePtr, axis>;
-#endif
 
 #define XPATH_INTERNAL_ITERATOR_ALIAS(ax) \
   using ax ## _iterator =                       \
@@ -232,7 +225,7 @@ public:
   node& operator=(const node& o) = default;
 
   template<
-    xpath::axis ax, 
+    class ax, 
     template<class> class Test = xpath::test::constant
   >
   class axis_t;
@@ -740,7 +733,7 @@ private:
   using log = curr::Logger<iterator_base>;
 };
 
-template<class NodePtr, xpath::axis axis>
+template<class NodePtr, class axis>
 class iterator
 {
 };
@@ -1633,9 +1626,270 @@ protected:
   bool empty_interval;
 };
 
+//! [4] Step
+namespace step {
+
+template<class NodePtr, class axis>
+using prim_iterator_t =
+  node_iterators::random_access_adapter<
+    node_iterators::iterator<NodePtr, axis>
+  >;
+
+template<class BaseIt, class Test>
+using pred_iterator_t =
+  node_iterators::random_access_adapter<
+    xpath::iterator<BaseIt, Test::template the_template>
+  >;
+
+template<class NodePtr, class axis, class Test>
+using step1_iterator_t = pred_iterator_t<
+  prim_iterator_t<NodePtr, axis>,
+  Test
+>;
+
+template<
+  class NodePtr, 
+  class axis, 
+  class... Predicates
+>
+struct iterator
+{
+};
+
+template<
+  class NodePtr, 
+  class axis, 
+  class Test
+>
+struct iterator<NodePtr, axis, Test>
+  : step1_iterator_t<NodePtr, axis, Test>
+{
+  using prim_iterator = prim_iterator_t<NodePtr, axis>;
+  using step1_iterator = 
+    step1_iterator_t<NodePtr, axis, Test>;
+
+  iterator(
+    const node<NodePtr>& context, 
+    Test&& test
+  )
+    : step1_iterator(
+        prim_iterator(context), 
+        std::forward<Test>(test)
+      )
+  {}
+
+  iterator(
+    node_iterators::end_t end,
+    const node<NodePtr>& context, 
+    Test&& test
+  )
+    : step1_iterator(
+        prim_iterator(context, end), 
+        std::forward<Test>(test)
+      )
+  {}
+};
+
+template<
+  class NodePtr, 
+  class axis, 
+  class Predicate0,
+  class... Predicates // the last is Test
+>
+struct iterator
+  <NodePtr, axis, Predicate0, Predicates...>
+    : pred_iterator_t<
+        iterator<NodePtr, axis, Predicates...>,
+        Predicate0
+      >
+{
+  using nested_iterator = iterator
+    <NodePtr, axis, Predicates...>;
+  using pred_iterator = pred_iterator_t<
+    iterator<NodePtr, axis, Predicates...>,
+    Predicate0
+  >;
+
+  iterator(
+    const node<NodePtr>& context, 
+    Predicate0&& p0,
+    Predicates&&... ps
+  )
+    : pred_iterator(
+        nested_iterator(
+          context, 
+          std::forward<Predicates>(ps)...
+        ),
+        p0
+      )
+  {}
+
+  iterator(
+    node_iterators::end_t end,
+    const node<NodePtr>& context, 
+    Predicate0&& p0,
+    Predicates&&... ps
+  )
+    : pred_iterator(
+        nested_iterator(
+          end,
+          context, 
+          std::forward<Predicates>(ps)...
+        ),
+        p0
+      )
+  {}
+};
+
+//! An xpath one-step query. The last predicate is xpath
+//! test, the rest are xpath predicates.
+template<class NodePtr, class axis, class... Preds> 
+class query
+{
+};
+
+template<class NodePtr, class axis, class Test>
+class query<NodePtr, axis, Test>
+{
+public:
+  using iterator = step::iterator<NodePtr, axis, Test>;
+
+  query(const node<NodePtr>& ctx, Test&& tst) 
+    : context(ctx),
+      test(std::forward<Test>(tst))
+  {}
+
+  iterator begin()
+  {
+    return iterator(context, test);
+  }
+
+  iterator end()
+  {
+    return iterator(node_iterators::end_t(),context, test);
+  }
+
+protected:
+  const node<NodePtr> context;
+  const Test test;
+};
+
+
+template<
+  class NodePtr, 
+  class axis, 
+  class Pred0,
+  class... Preds // the last is Test
+>
+class query<NodePtr, axis, Pred0, Preds...>
+  : public query<NodePtr, axis, Preds...>
+{
+public:
+  using iterator = step::iterator
+    <NodePtr, axis, Pred0, Preds...>;
+  using nested_query = query<NodePtr, axis, Preds...>;
+
+  query(const node<NodePtr>& ctx, Pred0&& p0,Preds&&... ps) 
+    : nested_query(ctx, std::forward<Preds>(ps)...),
+      test(std::forward<Pred0>(p0))
+  {}
+
+  iterator begin()
+  {
+    return iterator(nested_query::begin(), test);
+  }
+
+  iterator end()
+  {
+    return iterator(nested_query::end(), test);
+  }
+
+#if 0
+  //! Returns the number of nodes
+  //! If args are not null returns begin() and end()
+  //! values also.
+  size_type size(
+    iterator* bg_ = nullptr,
+    iterator* nd_ = nullptr
+  )
+  {
+    const auto bg = begin();
+    const auto nd = end();
+
+    if (bg_) *bg_ = bg;
+    if (nd_) *nd_ = bg;
+
+    if (bg.is_empty())
+      return 0;
+
+    const auto dist = nd - bg;
+    SCHECK(dist >= 0);
+    return dist;
+  }
+#endif
+protected:
+  const Pred0 test;
+};
+
+} // step
+
+//! [14] Expr
+namespace expr {
+
+#if 0
+//! [1] LocationPath (both absolute and relative - it is
+//! based on the context node passed to the constructor)
+template<::xpath::axis ax, class Test>
+class path // TODO multistep
+{
+public:
+  using axis_t = 
+    node::axis_t<ax, Test::template the_template>;
+
+  template<class... Args>
+  path(wrap ctx, Args&&... test_args) 
+    : test(std::forward<Args>(test_args)...),
+      context(ctx)
+  {}
+
+#if 0
+  size_t n_objects(const curr::ObjectCreationInfo& oi)
+  {
+    const auto n = axis_t(context).xsize(&cur);
+    SCHECK(n >= 0);
+    return (size_t) n;
+  }
+
+  shared::node* create_next_derivation(
+    const curr::ObjectCreationInfo& oi
+  )
+  {
+    assert(cur.get_ovf() == 0);
+    return new shared::node(cur++);
+  }
+
+  shared::node* create_derivation
+    (const curr::ObjectCreationInfo& oi) const
+  { THROW_NOT_IMPLEMENTED; }
+
+  shared::node* transform_object
+    (const shared::node*) const
+  { THROW_NOT_IMPLEMENTED; }
+#endif
+
+protected:
+  Test test;
+  //! the context node
+  renderer::dom_visitor::node context;
+  typename axis_t::xiterator cur;
+};
+#endif
+
+} // expr
+
 template<class NodePtr>
 template<
-  xpath::axis ax, 
+  class ax, 
   template<class> class Test
 >
 class node<NodePtr>::axis_t
@@ -1661,13 +1915,13 @@ public:
 
   using test_t = Test<iterator>;
 
-  explicit axis_t(node dom_) 
+  explicit axis_t(const node& dom_) 
     : dom(dom_),
       test(false)
   {}
 
   template<class... Args>
-  explicit axis_t(node dom_, Args&&... test_args)
+  explicit axis_t(const node& dom_, Args&&... test_args)
     : dom(dom_),
       test(std::forward<Args>(test_args)...)
   {}
