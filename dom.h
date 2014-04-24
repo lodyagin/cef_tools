@@ -23,7 +23,6 @@ class path;
 */
 
 namespace shared {
-//namespace dom {
 
 class node_ptr;
 
@@ -64,6 +63,8 @@ public:
 
 using node = ::xpath::node<wrap>;
 
+
+
 template<
   class axis,
   template<class> class Test,
@@ -71,8 +72,9 @@ template<
 >
 ::xpath::step::query<
     wrap,
+    Test<::xpath::step::prim_iterator_t<wrap, axis>>,
     axis, 
-    Test<::xpath::step::prim_iterator_t<wrap, axis>>
+    true
 >
 build_query(const node& ctx, TestArg&& test_arg, bool f)
 {
@@ -86,16 +88,15 @@ build_query(const node& ctx, TestArg&& test_arg, bool f)
 }
 
 template<
-  //class axis,
   template<class> class Test,
   class TestArg,
   class NestedQuery
 >
-::xpath::step::query1<
+::xpath::step::query<
     wrap, 
+    Test<typename NestedQuery::iterator>,
     NestedQuery,
-    //axis, 
-    Test<typename NestedQuery::iterator>
+    false
 >
 build_query(
   TestArg&& test_arg,
@@ -103,7 +104,7 @@ build_query(
 )
 {
   return ::xpath::step::build_query
-    <wrap, /*axis,*/ Test, TestArg, NestedQuery>
+    <wrap, Test, TestArg, NestedQuery>
   (
     std::forward<TestArg>(test_arg),
     std::forward<NestedQuery>(nested_query)

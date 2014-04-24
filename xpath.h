@@ -1808,16 +1808,26 @@ struct iterator
   {}
 };
 
-//! An xpath one-step query. 
-template<class NodePtr, class axis, class Test>
+//! An xpath query. 
+template<
+  class NodePtr, 
+  class Expr,
+  class Prev,
+  bool is_primary = true
+>
 class query
 {
-public:
-  using iterator = step::iterator<NodePtr, axis, Test>;
+};
 
-  query(const node<NodePtr>& ctx, Test&& tst) 
+template<class NodePtr, class Expr, class axis>
+class query<NodePtr, Expr, axis, true>
+{
+public:
+  using iterator = step::iterator<NodePtr, axis, Expr>;
+
+  query(const node<NodePtr>& ctx, Expr&& tst) 
     : context(ctx),
-      test(std::forward<Test>(tst))
+      test(std::forward<Expr>(tst))
   {}
 
   iterator begin()
@@ -1832,16 +1842,17 @@ public:
 
 protected:
   const node<NodePtr> context;
-  Test test;
+  Expr test;
 };
 
 
 template<
   class NodePtr, 
-  class NestedQuery,
-  class Expr
+  class Expr,
+  class NestedQuery
 >
-class query1 : public NestedQuery
+class query<NodePtr, Expr, NestedQuery, false>
+  : public NestedQuery
 {
 public:
   using iterator = pred_iterator_t<
@@ -1850,7 +1861,7 @@ public:
   >;
   using nested_query = NestedQuery;
 
-  query1(Expr&& e, NestedQuery&& nq) 
+  query(Expr&& e, NestedQuery&& nq) 
     : NestedQuery(std::forward<NestedQuery>(nq)),
       test(std::forward<Expr>(e))
   {}
@@ -1901,8 +1912,9 @@ template<
 >
 query<
     NodePtr, 
+    Test<prim_iterator_t<NodePtr, axis>>,
     axis, 
-    Test<prim_iterator_t<NodePtr, axis>>
+    true
 >
 build_query(
   const node<NodePtr>& ctx, 
@@ -1912,8 +1924,9 @@ build_query(
 {
   return query<
     NodePtr, 
+    Test<prim_iterator_t<NodePtr, axis>>,
     axis, 
-    Test<prim_iterator_t<NodePtr, axis>>
+    true
   > 
   (
     ctx, 
@@ -1925,27 +1938,26 @@ build_query(
 //! a nested query
 template<
   class NodePtr,
-  //class axis,
   template<class> class Test,
   class TestArg,
   class NestedQuery
 >
-query1<
+query<
     NodePtr, 
+    Test<typename NestedQuery::iterator>,
     NestedQuery,
-    //axis, 
-    Test<typename NestedQuery::iterator>
+    false
 >
 build_query(
   TestArg&& test_arg,
   NestedQuery&& nested_query
 )
 {
-  return query1<
+  return query<
     NodePtr, 
+    Test<typename NestedQuery::iterator>,
     NestedQuery,
-    //axis, 
-    Test<typename NestedQuery::iterator>
+    false
   > 
   (
     Test<typename NestedQuery::iterator>(
@@ -1956,9 +1968,6 @@ build_query(
 }
 
 } // step
-
-//! [14] Expr
-namespace expr {
 
 #if 0
 //! [1] LocationPath (both absolute and relative - it is
@@ -2009,8 +2018,7 @@ protected:
 };
 #endif
 
-} // expr
-
+// TODO refactor with step::query
 template<class NodePtr>
 template<
   class ax, 
@@ -2019,23 +2027,14 @@ template<
 class node<NodePtr>::axis_t
 {
 public:
-#if 0
-  using iterator = node::iterator<ax>;
-#else
   using iterator = node_iterators::random_access_adapter<
     node::iterator<ax>
   >;
-#endif
-#if 0
-  using xiterator = node_iterators::random_access_adapter<
-    xpath::iterator<node::iterator<ax>, Test>
-  >;
-#else
+
   // NB Test can use random access iterator internally
   using xiterator = node_iterators::random_access_adapter<
     xpath::iterator<iterator, Test>
   >;
-#endif
 
   using test_t = Test<iterator>;
 
