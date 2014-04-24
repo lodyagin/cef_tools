@@ -78,6 +78,9 @@ template<class Iterator>
 class constant
 {
 public:
+  template<class I>
+  using the_template = constant<I>;
+
   constant(bool res) : result(res) {}
   
   bool operator()(Iterator it) const
@@ -89,11 +92,14 @@ protected:
   bool result;
 };
 
-//! the NodeType test
+//! a NodeType test
 template<class It>
 class node_type
 {
 public:
+  template<class I>
+  using the_template = node_type<I>;
+
   using type = xpath::node_type;
 
   node_type(type a_type) : the_type(a_type) {}
@@ -111,6 +117,32 @@ protected:
 
 private:
   using log = curr::Logger<node_type>;
+};
+
+//! [37] NameTest
+template<class It>
+class name
+{
+public:
+  template<class I>
+  using the_template = name<I>;
+
+  name(const std::string& nm) : the_name(nm) {}
+  name(std::string&& nm) : the_name(std::move(nm)) {}
+
+  bool operator()(It it) const
+  {
+    LOG_TRACE(log, "xpath::test::name: "
+      << it->tag_name() << " vs " << the_name
+    );
+    return it->tag_name() == the_name;
+  }
+
+protected:
+  std::string the_name;
+
+private:
+  using log = curr::Logger<name>;
 };
 
 } // test
@@ -1830,6 +1862,103 @@ public:
 protected:
   const Pred0 test;
 };
+
+template<
+  class NodePtr, 
+  class NestedQuery,
+  class axis, 
+  class Expr
+>
+class query1 : public NestedQuery
+{
+public:
+  using iterator = pred_iterator_t<
+    typename NestedQuery::iterator,
+    Expr
+  >;
+  using nested_query = NestedQuery;
+
+  query1(Expr&& e, NestedQuery&& nq) 
+    : NestedQuery(std::forward<NestedQuery>(nq)),
+      test(std::forward<Expr>(e))
+  {}
+
+  iterator begin()
+  {
+    return iterator(nested_query::begin(), test);
+  }
+
+  iterator end()
+  {
+    return iterator(nested_query::end(), test);
+  }
+
+protected:
+  const Expr test;
+};
+
+template<
+  class NodePtr,
+  class axis,
+  template<class> class Test,
+  class TestArg
+>
+query<
+    NodePtr, 
+    axis, 
+    Test<prim_iterator_t<NodePtr, axis>>
+>
+build_query(
+  const node<NodePtr>& ctx, 
+  TestArg&& test_arg,
+  bool
+)
+{
+  return query<
+    NodePtr, 
+    axis, 
+    Test<prim_iterator_t<NodePtr, axis>>
+  > 
+  (
+    ctx, 
+    Test<prim_iterator_t<NodePtr, axis>>
+      (std::forward<TestArg>(test_arg))
+  );
+}
+
+//! a nested query
+template<
+  class NodePtr,
+  class axis,
+  template<class> class Test,
+  class TestArg,
+  class NestedQuery
+>
+query1<
+    NodePtr, 
+    NestedQuery,
+    axis, 
+    Test<typename NestedQuery::iterator>
+>
+build_query(
+//  const node<NodePtr>& ctx, 
+  TestArg&& test_arg,
+  NestedQuery&& nested_query
+)
+{
+  return query1<
+    NodePtr, 
+    NestedQuery,
+    axis, 
+    Test<typename NestedQuery::iterator>
+  > 
+  (
+    Test<typename NestedQuery::iterator>(
+      std::forward<TestArg>(test_arg)
+    ), 
+    std::forward<NestedQuery>(nested_query)
+  );
+}
 
 } // step
 

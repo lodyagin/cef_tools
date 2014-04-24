@@ -14,7 +14,6 @@
 #include "browser.h"
 #include "gtest/gtest.h"
 
-//using namespace renderer::dom_visitor::xpath;
 using namespace curr;
 
 namespace {
@@ -475,6 +474,27 @@ TEST(Xpath, XpathIterator)
       EXPECT_EQ(2, end - begin);
       EXPECT_EQ(2, ax1->xsize());
     }
+  });
+}
+
+TEST(Xpath, Query)
+{
+  test_dom([](CefRefPtr<CefDOMNode> r)
+  {
+    using namespace std;
+    using namespace renderer::dom_visitor;
+    using namespace ::xpath::step;
+    using namespace ::xpath;
+
+    build_query<axis::attribute(), ::xpath::test::name>(
+      "type",
+      build_query<axis::descendant, ::xpath::test::name>(
+        renderer::dom_visitor::node(r),
+        std::string("object"),
+        true
+      )
+    );
+        
   });
 }
 
