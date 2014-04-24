@@ -514,14 +514,36 @@ TEST(Xpath, Query)
       },
       build_query<axis::descendant, ::xpath::test::name>(
         renderer::dom_visitor::node(r),
-        std::string("a"),
+        "a",
         true
       )
     );
 
     EXPECT_EQ(10, size(q2));
-
   });
+}
+
+TEST(Xpath, NodeCreationInRepository)
+{
+  using namespace renderer;
+  using namespace shared;
+
+  node_repository::instance().query(
+    browser_id,
+    build_query<::xpath::test::fun>(
+      [](const node::generic_iterator& it)
+      {
+        return (*it)["href"].substr(0, 4) == "http";
+      },
+      build_query<axis::descendant, ::xpath::test::name>(
+        renderer::dom_visitor::node(r),
+        "a",
+        true
+      )
+    )
+  );
+
+  EXPECT_EQ(10, node_repository::instance().size());
 }
 
 std::atomic<int> test_result(13);

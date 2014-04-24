@@ -1969,55 +1969,6 @@ build_query(
 
 } // step
 
-#if 0
-//! [1] LocationPath (both absolute and relative - it is
-//! based on the context node passed to the constructor)
-template<::xpath::axis ax, class Test>
-class path // TODO multistep
-{
-public:
-  using axis_t = 
-    node::axis_t<ax, Test::template the_template>;
-
-  template<class... Args>
-  path(wrap ctx, Args&&... test_args) 
-    : test(std::forward<Args>(test_args)...),
-      context(ctx)
-  {}
-
-#if 0
-  size_t n_objects(const curr::ObjectCreationInfo& oi)
-  {
-    const auto n = axis_t(context).xsize(&cur);
-    SCHECK(n >= 0);
-    return (size_t) n;
-  }
-
-  shared::node* create_next_derivation(
-    const curr::ObjectCreationInfo& oi
-  )
-  {
-    assert(cur.get_ovf() == 0);
-    return new shared::node(cur++);
-  }
-
-  shared::node* create_derivation
-    (const curr::ObjectCreationInfo& oi) const
-  { THROW_NOT_IMPLEMENTED; }
-
-  shared::node* transform_object
-    (const shared::node*) const
-  { THROW_NOT_IMPLEMENTED; }
-#endif
-
-protected:
-  Test test;
-  //! the context node
-  renderer::dom_visitor::node context;
-  typename axis_t::xiterator cur;
-};
-#endif
-
 // TODO refactor with step::query
 template<class NodePtr>
 template<
