@@ -86,7 +86,7 @@ build_query(const node& ctx, TestArg&& test_arg, bool f)
 }
 
 template<
-  class axis,
+  //class axis,
   template<class> class Test,
   class TestArg,
   class NestedQuery
@@ -94,7 +94,7 @@ template<
 ::xpath::step::query1<
     wrap, 
     NestedQuery,
-    axis, 
+    //axis, 
     Test<typename NestedQuery::iterator>
 >
 build_query(
@@ -103,7 +103,7 @@ build_query(
 )
 {
   return ::xpath::step::build_query
-    <wrap, axis, Test, TestArg, NestedQuery>
+    <wrap, /*axis,*/ Test, TestArg, NestedQuery>
   (
     std::forward<TestArg>(test_arg),
     std::forward<NestedQuery>(nested_query)

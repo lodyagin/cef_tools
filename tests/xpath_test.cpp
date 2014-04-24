@@ -485,15 +485,26 @@ TEST(Xpath, Query)
     using namespace renderer::dom_visitor;
     using namespace ::xpath::step;
     using namespace ::xpath;
+    using node = renderer::dom_visitor::node;
 
-    build_query<axis::attribute(), ::xpath::test::name>(
-      "type",
+    // double-checkin query
+    auto q = 
+    build_query<::xpath::test::name>(
+      "a",
       build_query<axis::descendant, ::xpath::test::name>(
         renderer::dom_visitor::node(r),
-        std::string("object"),
+        std::string("a"),
         true
       )
     );
+
+#if 1
+    copy(q.begin(), q.end(), 
+      ostream_iterator<node>(cout, "\n")
+    );
+#endif
+
+    //EXPECT_EQ(12, q.size());
         
   });
 }

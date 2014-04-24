@@ -1142,7 +1142,6 @@ public:
     return copy;
   }
 
-protected:
   explicit iterator(const node<NodePtr>& context_node) 
     noexcept
     : iterator_base<NodePtr>(
@@ -1491,16 +1490,18 @@ public:
     return current.ovf_equal(o.current);
   }
 
-  reference operator*() const
+  reference operator*()
   {
     SCHECK(!empty_interval);
     assert(test(current));
     return *current;
   }
 
-  pointer operator->() const
+  pointer operator->()
   {
-    return &(operator*());
+    SCHECK(!empty_interval);
+    assert(test(current));
+    return current.operator->();
   }
 
   iterator& operator++()
@@ -1702,22 +1703,22 @@ struct iterator<NodePtr, axis, Test>
 
   iterator(
     const node<NodePtr>& context, 
-    Test&& test
+    const Test& test
   )
     : step1_iterator(
         prim_iterator(context), 
-        std::forward<Test>(test)
+        test
       )
   {}
 
   iterator(
     node_iterators::end_t end,
     const node<NodePtr>& context, 
-    Test&& test
+    const Test& test
   )
     : step1_iterator(
         prim_iterator(context, end), 
-        std::forward<Test>(test)
+        test
       )
   {}
 };
@@ -1803,7 +1804,7 @@ public:
 
 protected:
   const node<NodePtr> context;
-  const Test test;
+  Test test;
 };
 
 
@@ -1866,7 +1867,7 @@ protected:
 template<
   class NodePtr, 
   class NestedQuery,
-  class axis, 
+//  class axis, 
   class Expr
 >
 class query1 : public NestedQuery
@@ -1929,7 +1930,7 @@ build_query(
 //! a nested query
 template<
   class NodePtr,
-  class axis,
+  //class axis,
   template<class> class Test,
   class TestArg,
   class NestedQuery
@@ -1937,11 +1938,10 @@ template<
 query1<
     NodePtr, 
     NestedQuery,
-    axis, 
+    //axis, 
     Test<typename NestedQuery::iterator>
 >
 build_query(
-//  const node<NodePtr>& ctx, 
   TestArg&& test_arg,
   NestedQuery&& nested_query
 )
@@ -1949,7 +1949,7 @@ build_query(
   return query1<
     NodePtr, 
     NestedQuery,
-    axis, 
+    //axis, 
     Test<typename NestedQuery::iterator>
   > 
   (
