@@ -14,6 +14,7 @@
 #include "Repository.h"
 #include "SSingleton.h"
 #include "xpath.h"
+#include "browser.h"
 
 namespace renderer { namespace dom_visitor {
 class query_base;
@@ -23,6 +24,9 @@ class query;
 
 namespace shared {
 
+//! Node identifier. It is 
+//! xpath::child_path except the first (unknown) element
+//! (it is absent here)
 class node_id_t : public std::vector<ptrdiff_t>
 {
 public:
@@ -58,6 +62,9 @@ class node_obj
 {
   template<class Query>
   friend class ::renderer::dom_visitor::query;
+
+  friend std::ostream&
+  operator<<(std::ostream&, const node_obj&);
 
 public:
   using Par = ::renderer::dom_visitor::query_base;
@@ -139,11 +146,19 @@ using node = ::xpath::node<wrap>;
 class query_base
 {
 public:
-  virtual ~query_base() {}
-  
+  struct result 
+  {
+    virtual ~result() {}
+  };
+
+  virtual ~query_base() 
+  {
+    LOG_TRACE(log, "dom_visitor::~query_base()");
+  }
+
   virtual size_t n_objects(
     const curr::ObjectCreationInfo& oi
-  ) const = 0;
+  ) = 0;
 
   virtual shared::node_id_t get_id(
     const curr::ObjectCreationInfo& oi
@@ -151,7 +166,7 @@ public:
 
   virtual shared::node_obj* create_next_derivation(
     const curr::ObjectCreationInfo& oi
-  ) const = 0;
+  ) = 0;
 
   shared::node_obj* create_derivation
     (const curr::ObjectCreationInfo& oi) const
@@ -160,6 +175,9 @@ public:
   shared::node_obj* transform_object
     (const shared::node_obj*) const
   { THROW_NOT_IMPLEMENTED; }
+
+private:
+  using log = curr::Logger<query_base>;
 };
 
 template<class Query>
@@ -171,13 +189,21 @@ public:
   using xpath_query = Query;
   using xpath_query_result = typename Query::result;
 
+  struct result : query_base::result, xpath_query_result {};
+
   node context;
 
   query(const Query& q) : Query(q) {}
 
-  size_t n_objects(const curr::ObjectCreationInfo& oi)
-    const override
+  ~query()
   {
+    LOG_TRACE(log, "dom_visitor::~query()");
+  }
+
+  size_t n_objects(const curr::ObjectCreationInfo& oi)
+    override
+  {
+    LOG_TRACE(log, "n_objects");
     result = this->execute(context);
     return result.size(&cur);
   }
@@ -186,14 +212,20 @@ public:
     const curr::ObjectCreationInfo& oi
   ) const override
   {
+    LOG_TRACE(log, "get_id");
     return cur.path();
   }
 
   shared::node_obj* create_next_derivation(
     const curr::ObjectCreationInfo& oi
-  ) const override
+  ) override
   {
-    assert((std::string) cur.path() == oi.objectId);
+    LOG_TRACE(log, 
+      "create_next_derivation"
+      << "cur.path() == " << cur.path()
+      << ", oi.objectId == " << oi.objectId
+    );
+//    assert((std::string) cur.path() == oi.objectId);
     auto obj = new shared::node_obj(
     /*FIXME*/ const_cast<typename Query::iterator&>
       (cur)
@@ -202,9 +234,20 @@ public:
     return obj;
   }
 
+  //! release all CefDOMNodes
+  void release()
+  {
+    context = renderer::dom_visitor::node();
+    result = xpath_query_result();
+    cur = typename Query::iterator();
+  }
+
 protected:
-  mutable xpath_query_result result;
-  mutable typename Query::iterator cur;
+  xpath_query_result result;
+  typename Query::iterator cur;
+
+private:
+  using log = curr::Logger<query>;
 };
 
 template<
@@ -285,6 +328,45 @@ class node_repository :
     shared::node_id_t
   >
 {
+protected:
+
+template<class Query>
+class DOMVisitor : public CefDOMVisitor
+{
+public:
+  DOMVisitor(
+    node_repository& rep,
+    Query&& q
+  ) 
+    : node_rep(rep),
+      query(std::move(q))
+  {}
+
+  // DOM is valid only inside this function
+  // do not store DOM externally!
+  void Visit(CefRefPtr<CefDOMDocument> d) override
+  {
+    query.context = renderer::dom_visitor::wrap
+      (d->GetDocument());
+    result_list = node_rep.create_several_objects(query);
+    // reset the context to release the DOM
+    query.release();
+  }
+
+  list_type get_result_list() const
+  {
+    return result_list;
+  }
+
+protected:
+  node_repository& node_rep;
+  Query query;
+  list_type result_list;
+
+private:
+  IMPLEMENT_REFCOUNTING();
+};
+
 public:
   using Spark = curr::SparkRepository<
     shared::node_obj, 
@@ -299,10 +381,22 @@ public:
     this->complete_construction();
   }
 
+  template<class Query>
   list_type query(
     int browser_id,
-    const dom_visitor::query_base& q
-  );
+    Query&& q
+  )
+  {
+    CefRefPtr<CefDOMVisitor> visitor = 
+      new DOMVisitor<Query>(*this, std::move(q));
+
+    shared::browser_repository::instance()
+      . get_object_by_id(browser_id) -> br
+      -> GetMainFrame() -> VisitDOM
+        (visitor); // takes ownership (ptr)
+    return dynamic_cast<DOMVisitor<Query>*>
+      (visitor.get())->get_result_list();
+  }
 };
 
 } // renderer

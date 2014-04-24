@@ -9,43 +9,62 @@
 #include "Repository.hpp"
 #include "SSingleton.hpp"
 #include "dom.h"
+#include "browser.h"
 
-namespace renderer {
+namespace shared {
 
-namespace dom_visitor {
-namespace {
-
-class DOMVisitor : public CefDOMVisitor
+std::ostream&
+operator<< (std::ostream& out, const node_id_t& path)
 {
-public:
-  DOMVisitor(const query_base& q) : query(q) {}
+  for (const auto k : path)
+    out << '/' << k;
+  return out;
+}
 
-  // DOM is valid only inside this function
-  // do not store DOM externally!
-  void Visit(CefRefPtr<CefDOMDocument> d) override
-  {
-    fun(d->GetDocument());
+std::istream&
+operator>> (std::istream& in, node_id_t& path)
+{
+  path.reserve(10);
+  while(in) {
+    SCHECK(in.get() == '/');
+    node_id_t::value_type l;
+    in >> l;
+    path.push_back(l);
   }
-
-protected:
-  query_base& query;
-
-private:
-  IMPLEMENT_REFCOUNTING();
-};
-}}
-
+  return in;
 }
 
-node_repository::list_type node_repository
-::query(
-  int browser_id,
-  const dom_visitor::query_base& q
-)
+std::ostream&
+operator<<(std::ostream& out, const node_obj& nd)
 {
-  shared::browser_repository::instance()
-    . get_object_by_id(browser_id) -> br
-    -> GetMainFrame() -> VisitDOM(new DOMVisitor(q));
+  using namespace std;
+
+  switch(nd.type)
+  {
+    case xpath::node_type::node:
+    {
+      // tag name
+      out << '<' << nd.tag;
+
+      // attributes
+      for (const auto p : nd.attrs)
+        out << ' ' << p.first << "=\"" << p.second << '"';
+      out << '>';
+
+      // bounding rect
+      const CefRect& r = nd.bounding_rect;
+      out << " [" << r.x << ", " << r.y << ", " << r.width
+         << ", " << r.height << "]";
+
+      return out;
+    }
+
+    default:
+      THROW_NOT_IMPLEMENTED;
+  }
 }
 
+
 }
+
+

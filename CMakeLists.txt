@@ -23,6 +23,7 @@ add_subdirectory(tests)
 
 set(offscreen_SOURCES
     browser.cpp
+    dom.cpp
     dom_event.cpp
     offscreen.cpp
     proc_browser.cpp

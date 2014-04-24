@@ -1886,7 +1886,9 @@ public:
 
     result(const node<NodePtr>& ctx, const Expr& tst) 
       : context(ctx), test(tst)
-    {}
+    {
+      SCHECK(context.is_valid());
+    }
 
     iterator begin()
     {
@@ -1954,24 +1956,24 @@ public:
     result() {}
 
     result(
-      const node<NodePtr>& ctx, 
+      //const node<NodePtr>& ctx, 
       const Expr& tst,
       nested_result&& nested
     ) 
       : nested_result(std::move(nested)),
-        context(ctx), 
+        //context(ctx), 
         test(tst)
     {}
 
     iterator begin()
     {
-      SCHECK(context.is_valid());
+//      SCHECK(context.is_valid());
       return iterator(nested_result::begin(), test);
     }
 
     iterator end()
     {
-      SCHECK(context.is_valid());
+//      SCHECK(context.is_valid());
       return iterator(nested_result::end(), test);
     }
 
@@ -1983,7 +1985,7 @@ public:
       return step::size<query_type>(*this, bg, nd);
     }
 
-    node<NodePtr> context;
+//    node<NodePtr> context;
     Expr test;
   };
 
@@ -1994,7 +1996,7 @@ public:
 
   result execute(const node<NodePtr>& ctx) const
   {
-    return result(ctx, test, NestedQuery::execute(ctx));
+    return result(test, NestedQuery::execute(ctx));
   }
 
 protected:
