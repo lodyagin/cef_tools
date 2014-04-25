@@ -10,6 +10,7 @@
 #define OFFSCREEN_DOM_H
 
 #include <iostream>
+#include <chrono>
 #include "RHolder.h"
 #include "Repository.h"
 #include "SSingleton.h"
@@ -27,27 +28,42 @@ namespace shared {
 //! Node identifier. It is 
 //! xpath::child_path except the first (unknown) element
 //! (it is absent here)
-class node_id_t : public std::vector<ptrdiff_t>
+class node_id_t
 {
 public:
   using vector = std::vector<ptrdiff_t>;
 
   node_id_t() {}
 
-  node_id_t(const ::xpath::child_path_t& p)
+  node_id_t(
+    int browser_id_,
+    const ::xpath::child_path_t& child_path
+  ) 
+    : browser_id(browser_id_)
   {
-    reserve(10);
-    auto bg = p.begin();
+    path.reserve(10);
+    auto bg = child_path.begin();
     std::copy(
-      ++bg, p.end(), 
-      std::back_inserter(*this)
+      ++bg, child_path.end(), 
+      std::back_inserter(path)
     );
+  }
+
+  bool operator<(const node_id_t& o) const
+  {
+    if (browser_id != o.browser_id)
+      return browser_id < o.browser_id;
+    else
+      return path < o.path;
   }
 
   operator std::string() const
   {
     return curr::sformat(*this);
   }
+
+  int browser_id = 0;
+  vector path;
 };
 
 std::ostream&
@@ -56,7 +72,12 @@ operator<< (std::ostream& out, const node_id_t& path);
 std::istream&
 operator>> (std::istream& in, node_id_t& path);
 
+} // shared
+
+namespace renderer {
+
 class node_ptr;
+class node_repository;
 
 class node_obj
 {
@@ -71,6 +92,29 @@ public:
 
   using iterator_base = 
     xpath::node_iterators::iterator_base<node_ptr>;
+
+  //! time intervals 
+  using duration = std::chrono::duration<int, std::milli>;
+
+  /* screenshots */
+
+  //! Takes the node screenshot into png
+  //! with the path fname.
+  void take_screenshot(
+    const std::string& fname,
+    bool prepend_timestamp = true
+  );
+
+  //! Takes the screenshot after secs seconds. Creates the
+  //! thread for the take_screenshot() call and returns
+  //! immediately.
+  void take_screenshot_delayed(
+    const std::string& fname,
+    duration delay,
+    bool prepend_timestamp = true
+  );
+
+  /* util methods */
 
   std::string universal_id() const 
   { 
@@ -92,10 +136,15 @@ public:
     return bounding_rect;
   }
 
+  shared::node_id_t get_id() const
+  {
+    return id;
+  }
+
 protected:
   template<class It>
-  node_obj(/*FIXME const*/ It& it)
-    : id(it.path()),
+  node_obj(int browser_id, /*FIXME const*/ It& it)
+    : id(browser_id, it.path()),
       type(it->get_type()),
       tag(it->tag_name()),
       bounding_rect((*it)->GetBoundingClientRect())
@@ -105,11 +154,14 @@ protected:
       attrs.insert(p);
   }
 
-  const node_id_t id;
+  const shared::node_id_t id;
   const xpath::node_type type;
   const std::string tag;
   std::map<std::string, std::string> attrs;
   const CefRect bounding_rect;
+
+private:
+  using log = curr::Logger<node_obj>;
 };
 
 std::ostream&
@@ -117,7 +169,7 @@ operator<<(std::ostream& out, const node_obj& nd);
 
 class node_ptr : public curr::RHolder<node_obj> {};
 
-}
+} // renderer
 
 // for usage in renderer thread (process) only
 namespace renderer {
@@ -164,16 +216,16 @@ public:
     const curr::ObjectCreationInfo& oi
   ) const = 0;
 
-  virtual shared::node_obj* create_next_derivation(
+  virtual renderer::node_obj* create_next_derivation(
     const curr::ObjectCreationInfo& oi
   ) = 0;
 
-  shared::node_obj* create_derivation
+  renderer::node_obj* create_derivation
     (const curr::ObjectCreationInfo& oi) const
   { THROW_NOT_IMPLEMENTED; }
 
-  shared::node_obj* transform_object
-    (const shared::node_obj*) const
+  renderer::node_obj* transform_object
+    (const renderer::node_obj*) const
   { THROW_NOT_IMPLEMENTED; }
 
 private:
@@ -210,32 +262,11 @@ public:
 
   shared::node_id_t get_id(
     const curr::ObjectCreationInfo& oi
-  ) const override
-  {
-    LOG_TRACE(log, 
-      "get_id " << cur.path()
-      << " -> " << shared::node_id_t(cur.path())
-    );
-    return cur.path();
-  }
+  ) const override;
 
-  shared::node_obj* create_next_derivation(
+  renderer::node_obj* create_next_derivation(
     const curr::ObjectCreationInfo& oi
-  ) override
-  {
-    LOG_TRACE(log, 
-      "create_next_derivation "
-      << "cur.path() == " << cur.path()
-      << ", oi.objectId == " << oi.objectId
-    );
-//    assert((std::string) cur.path() == oi.objectId);
-    auto obj = new shared::node_obj(
-    /*FIXME*/ const_cast<typename Query::iterator&>
-      (cur)
-    );
-    ++cur;
-    return obj;
-  }
+  ) override;
 
   //! release all CefDOMNodes
   void release()
@@ -325,7 +356,7 @@ query<
 class node_repository :
   public curr::SAutoSingleton<node_repository>,
   public curr::SparkRepository<
-    shared::node_obj, 
+    renderer::node_obj, 
     dom_visitor::query_base,
     std::map,
     shared::node_id_t
@@ -339,19 +370,25 @@ class DOMVisitor : public CefDOMVisitor
 public:
   DOMVisitor(
     node_repository& rep,
+    int browser_id_,
     Query&& q
   ) 
     : node_rep(rep),
-      query(std::move(q))
-  {}
+      query(std::move(q)),
+      browser_id(browser_id_)
+  {
+    SCHECK(browser_id > 0);
+  }
 
   // DOM is valid only inside this function
   // do not store DOM externally!
   void Visit(CefRefPtr<CefDOMDocument> d) override
   {
+    
     query.context = renderer::dom_visitor::wrap
       (d->GetDocument());
-    result_list = node_rep.create_several_objects(query);
+    result_list = node_rep.create_several_objects
+      (browser_id, query);
     // reset the context to release the DOM
     query.release();
   }
@@ -365,6 +402,7 @@ protected:
   node_repository& node_rep;
   Query query;
   list_type result_list;
+  int browser_id;
 
 private:
   IMPLEMENT_REFCOUNTING();
@@ -372,7 +410,7 @@ private:
 
 public:
   using Spark = curr::SparkRepository<
-    shared::node_obj, 
+    renderer::node_obj, 
     dom_visitor::query_base,
     std::map,
     shared::node_id_t
@@ -385,13 +423,11 @@ public:
   }
 
   template<class Query>
-  list_type query(
-    int browser_id,
-    Query&& q
-  )
+  list_type query(int browser_id, Query&& q)
   {
     CefRefPtr<CefDOMVisitor> visitor = 
-      new DOMVisitor<Query>(*this, std::move(q));
+      new DOMVisitor<Query>
+        (*this, browser_id, std::move(q));
 
     shared::browser_repository::instance()
       . get_object_by_id(browser_id) -> br
@@ -400,9 +436,73 @@ public:
     return dynamic_cast<DOMVisitor<Query>*>
       (visitor.get())->get_result_list();
   }
+
+  //! Adds current_browser_id (thread protected) set
+  list_type create_several_objects(
+    int browser_id,
+    dom_visitor::query_base& param
+  );
+
+  int get_current_browser_id() const
+  {
+    return current_browser_id;
+  }
+
+protected:
+  int current_browser_id = 0;
 };
 
-} // renderer
+namespace dom_visitor {
+
+template<class Query>
+shared::node_id_t query<Query>
+//
+::get_id(
+  const curr::ObjectCreationInfo& oi
+) const
+{
+  const auto* rep = 
+    dynamic_cast<const renderer::node_repository*>
+    (oi.repository);
+  SCHECK(rep);
+
+  const auto id = shared::node_id_t(
+    rep->get_current_browser_id(), cur.path()
+    );
+
+  LOG_TRACE(log, "get_id " << cur.path() << " -> " << id);
+  return id;
+}
+
+template<class Query>
+renderer::node_obj* query<Query>
+//
+::create_next_derivation(
+  const curr::ObjectCreationInfo& oi
+)
+{
+  const auto* rep = dynamic_cast<const node_repository*>
+    (oi.repository);
+  SCHECK(rep);
+  SCHECK(rep->get_current_browser_id() > 0);
+
+  LOG_TRACE(log, 
+            "create_next_derivation "
+            << "cur.path() == " << cur.path()
+            << ", oi.objectId == " << oi.objectId
+    );
+  auto obj = new renderer::node_obj(
+    rep->get_current_browser_id(),
+    /*FIXME*/ const_cast<typename Query::iterator&>
+    (cur)
+    );
+  ++cur;
+  return obj;
+}
+
+} // dom_visitor
+
+} // shared
 
 #endif
 

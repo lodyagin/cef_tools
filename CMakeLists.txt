@@ -29,6 +29,7 @@ set(offscreen_SOURCES
     proc_browser.cpp
     screenshotter.cpp
     string_utils.cpp
+    task1.cpp
     xpath.cpp
 )
 

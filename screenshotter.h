@@ -13,6 +13,8 @@
 #include <png++/png.hpp>
 #include "include/cef_base.h"
 
+namespace renderer {
+
 //! Save 2d BGRA point array to png::image
 template<class point, class pixel>
 png::image<pixel>&
@@ -32,26 +34,6 @@ operator<< (
   }
   return img;
 }
-
-namespace screenshot {
-
-//! Take a screenshot from browser_id of rect r into png
-//! with the path fname
-void take(
-  int browser_id, 
-  const CefRect& r, 
-  const std::string fname
-);
-
-  //! Take the screenshot after secs seconds. Creates the
-  //! thread for the remote take() call and returns
-  //! immediately.
-  void take_delayed(
-    int browser_id, 
-    const CefRect& r, 
-    const std::string fname,
-    int secs
-  );
 
 }
 

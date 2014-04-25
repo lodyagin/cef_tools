@@ -11,7 +11,12 @@
 #include "offscreen.h"
 #include "browser.h"
 
+// Get png of the first flash banner.
+#include "task1.h"
+
 using namespace curr;
+
+static const int browser_id = 1;
 
 int main(int argc, char* argv[])
 {
@@ -34,13 +39,11 @@ int main(int argc, char* argv[])
       );
 
       std::cout << "RENDER THREAD" << std::endl;
-#if 0
       // post the flash search task
       CefPostTask(
         TID_RENDERER, 
-        new ::renderer::search::flash(browser_id)
+        new ::renderer::get_png(browser_id, 1)
       );
-#endif
     }
   );
 }

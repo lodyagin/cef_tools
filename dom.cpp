@@ -14,25 +14,33 @@
 namespace shared {
 
 std::ostream&
-operator<< (std::ostream& out, const node_id_t& path)
+operator<< (std::ostream& out, const node_id_t& id)
 {
-  for (const auto k : path)
+  out << id.browser_id << ':';
+  for (const auto k : id.path)
     out << '/' << k;
   return out;
 }
 
 std::istream&
-operator>> (std::istream& in, node_id_t& path)
+operator>> (std::istream& in, node_id_t& id)
 {
-  path.reserve(10);
+  in >> id.browser_id;
+  SCHECK(in.get() == ':');
+
+  id.path.reserve(10);
   while(in) {
     SCHECK(in.get() == '/');
-    node_id_t::value_type l;
+    node_id_t::vector::value_type l;
     in >> l;
-    path.push_back(l);
+    id.path.push_back(l);
   }
   return in;
 }
+
+} // shared
+
+namespace renderer {
 
 std::ostream&
 operator<<(std::ostream& out, const node_obj& nd)
@@ -64,7 +72,20 @@ operator<<(std::ostream& out, const node_obj& nd)
   }
 }
 
-
+node_repository::list_type node_repository
+//
+::create_several_objects(
+  int browser_id,
+  dom_visitor::query_base& param
+)
+{
+  SCHECK(browser_id > 0);
+  RLOCK(this->objectsM);
+  current_browser_id = browser_id;
+  return Spark::create_several_objects(param);
 }
+
+
+} // renderer
 
 
