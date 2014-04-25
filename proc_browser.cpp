@@ -13,6 +13,10 @@
 
 using namespace curr;
 
+namespace g_flags {
+extern bool single_process_mode;
+}
+
 namespace browser { namespace handler {
 
 void browser::OnContextInitialized() 

@@ -25,6 +25,10 @@
 
 using namespace curr;
 
+namespace g_flags {
+extern bool single_process_mode;
+}
+
 //! The code used by a renderer process only
 namespace renderer {
 namespace handler {
@@ -131,14 +135,6 @@ int offscreen(
 
   CefSettings settings;
   CefInitialize(main_args, settings, app.get(), nullptr);
-#if 0
-  screenshot::take_delayed(
-    1, 
-    CefRect(0, 0, 2700, 2700), 
-    "test.png", 
-    28
-  );
-#endif
   CefRunMessageLoop();
   CefShutdown();
   return 0;
@@ -215,12 +211,18 @@ void renderer::OnBrowserCreated(CefRefPtr<CefBrowser> br)
 {
   using namespace shared;
 
-  // register the new browser in the browser_repository
-  browser_repository::instance().create_object
-    (shared::browser::Par(br)) -> id;
+  if (!g_flags::single_process_mode) {
+    // register the new browser in the browser_repository
+    browser_repository::instance().create_object
+      (shared::browser::Par(br)) -> id;
+  }
 
   // Start the on_create thread
-  if (on_created) {
+  if (on_created 
+      // the protection is actual in a single-process mode
+      && CefCurrentlyOn(TID_RENDERER) 
+      ) 
+  {
     StdThread::create<LightThread>(
       on_created, "render_thread"
     )->start();
@@ -235,9 +237,11 @@ void renderer::OnBrowserDestroyed(CefRefPtr<CefBrowser> br)
   const int br_id = br->GetIdentifier();
   assert(br_id > 0);
   
-  // register the new browser in the browser_repository
-  browser_repository::instance().delete_object_by_id
-    (br_id, true);
+  if (!g_flags::single_process_mode) {
+    // register the new browser in the browser_repository
+    browser_repository::instance().delete_object_by_id
+      (br_id, true);
+  }
 }
 
 }}

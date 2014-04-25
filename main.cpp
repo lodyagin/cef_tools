@@ -18,6 +18,10 @@ using namespace curr;
 
 static const int browser_id = 1;
 
+namespace g_flags {
+bool single_process_mode = false;
+}
+
 int main(int argc, char* argv[])
 {
   std::cout << "main started: ";
@@ -25,9 +29,19 @@ int main(int argc, char* argv[])
     std::cout << argv[i] << " ";
   std::cout << std::endl;
 
+  char** argv2 = new char*[argc+2];
+  int argc2;
+  for (argc2 = 0; argc2 < argc; argc2++)
+    argv2[argc2] = argv[argc2];
+#if 0
+  // enable single process
+  g_flags::single_process_mode = true;
+  SCHECK(argv2[argc2++] = strdup("--single-process"));
+#endif
+
   return offscreen(
-    argc, 
-    argv,
+    argc2, 
+    argv2,
     []()
     {
       CURR_WAIT_L(
@@ -38,7 +52,6 @@ int main(int argc, char* argv[])
         60001
       );
 
-      std::cout << "RENDER THREAD" << std::endl;
       // post the flash search task
       CefPostTask(
         TID_RENDERER, 

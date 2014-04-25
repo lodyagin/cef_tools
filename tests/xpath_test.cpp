@@ -565,6 +565,10 @@ private:
   IMPLEMENT_REFCOUNTING();
 };
 
+namespace g_flags{
+bool single_process_mode = false;
+}
+
 int main(int argc, char* argv[])
 {
   testing::InitGoogleTest(&argc, argv);
