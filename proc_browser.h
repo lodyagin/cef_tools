@@ -83,7 +83,14 @@ public:
     return new render(width, height);
   }
 
+  bool OnProcessMessageReceived(
+    CefRefPtr<CefBrowser> browser,
+    CefProcessId source_proc_id,
+    CefRefPtr<CefProcessMessage> msg
+  ) override;
+
 private:
+  using log = curr::Logger<client>;
   IMPLEMENT_REFCOUNTING(client);
 };
 

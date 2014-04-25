@@ -9,10 +9,10 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
+#include "include/wrapper/cef_message_router.h"
 #include "RThread.hpp"
 #include "SCommon.h"
 #include "types/time.h"
-//#include "RHolder.hpp"
 #include "screenshotter.h"
 #include "browser.h"
 #include "dom.h"
@@ -49,6 +49,37 @@ void node_obj::take_screenshot(
       << "area is empty, do not store " << png_name);
     return;
   }
+
+  LOG_DEBUG(log, "sending the msg");
+  {
+    CefRefPtr<CefProcessMessage> msg =
+      CefProcessMessage::Create("take_screenshot");
+#if 0
+    LOG_TRACE(log, "1");
+    msg->GetArgumentList()->SetInt(0, id.browser_id);
+    LOG_TRACE(log, "2");
+    msg->GetArgumentList()->SetInt(1, r.x);
+    LOG_TRACE(log, "3");
+    msg->GetArgumentList()->SetInt(2, r.y);
+    LOG_TRACE(log, "4");
+    msg->GetArgumentList()->SetInt(3, r.width);
+    LOG_TRACE(log, "5");
+    msg->GetArgumentList()->SetInt(4, r.height);
+    LOG_TRACE(log, "6");
+    msg->GetArgumentList()->SetString(
+      5, 
+      CefString(png_name)
+    );
+    LOG_TRACE(log, "7");
+#endif
+     shared::browser_repository::instance()
+      . get_object_by_id(id.browser_id)
+      -> get_cef_browser() 
+      -> SendProcessMessage(PID_BROWSER, msg);
+  }
+  LOG_DEBUG(log, "msg is sent");
+
+#if 0
   png::image<png::rgba_pixel> img(r.width, r.height);
   (img << 
 #if 1
@@ -59,6 +90,7 @@ void node_obj::take_screenshot(
 #endif
      -> vbuf . get_area(r.x, r.y, r.width, r.height)
   ).write(png_name);
+#endif
 }
 
 void node_obj::take_screenshot_delayed(
