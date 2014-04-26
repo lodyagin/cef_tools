@@ -1,0 +1,2567 @@
+Index: cef.gyp
+===================================================================
+--- cef.gyp	(revision 1640)
++++ cef.gyp	(working copy)
+@@ -623,6 +623,7 @@
+           ],
+         }],
+         [ 'OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
++#          'cflags_cc': [ '-std=c++11' ],
+           'dependencies': [
+             '<(DEPTH)/build/linux/system.gyp:gtk',
+             '<(DEPTH)/build/linux/system.gyp:gtkprint',
+@@ -1060,6 +1061,8 @@
+         'libcef/renderer/v8_impl.h',
+         'libcef/renderer/webkit_glue.cc',
+         'libcef/renderer/webkit_glue.h',
++        'libcef/addons/screenshotter.cc',
++        'libcef/addons/screenshotter.h',
+         '<(DEPTH)/chrome/common/chrome_switches.cc',
+         '<(DEPTH)/chrome/common/chrome_switches.h',
+         # Include sources for proxy support.
+Index: include/capi/cef_dom_capi.h
+===================================================================
+--- include/capi/cef_dom_capi.h	(revision 1640)
++++ include/capi/cef_dom_capi.h	(working copy)
+@@ -346,6 +346,18 @@
+       cef_string_map_t attrMap);
+ 
+   ///
++  // Returns the number of attributes
++  ///
++  size_t (CEF_CALLBACK *get_number_of_element_attributes)(
++      struct _cef_domnode_t* self);
++
++  ///
++  // Return the attribute by the index (0 based)
++  ///
++  void (CEF_CALLBACK *get_element_attribute_by_idx)(struct _cef_domnode_t* self,
++      size_t idx, cef_string_t* name, cef_string_t* value);
++
++  ///
+   // Set the value for the element attribute named |attrName|. Returns true (1)
+   // on success.
+   ///
+@@ -358,6 +370,13 @@
+   // The resulting string must be freed by calling cef_string_userfree_free().
+   cef_string_userfree_t (CEF_CALLBACK *get_element_inner_text)(
+       struct _cef_domnode_t* self);
++
++  ///
++  // Returns the (minimal) rectangle which encloses the element. It returns the
++  // same result as javascript getBoundingClientRect for the element node.
++  ///
++  cef_rect_t (CEF_CALLBACK *get_bounding_client_rect)(
++      struct _cef_domnode_t* self);
+ } cef_domnode_t;
+ 
+ 
+Index: include/capi/cef_task_capi.h
+===================================================================
+--- include/capi/cef_task_capi.h	(revision 1640)
++++ include/capi/cef_task_capi.h	(working copy)
+@@ -134,19 +134,19 @@
+ 
+ ///
+ // Returns true (1) if called on the specified thread. Equivalent to using
+-// cef_task_runner_t::GetForThread(threadId)->belongs_to_current_thread().
++// cef_task_tRunner::GetForThread(threadId)->belongs_to_current_thread().
+ ///
+ CEF_EXPORT int cef_currently_on(cef_thread_id_t threadId);
+ 
+ ///
+ // Post a task for execution on the specified thread. Equivalent to using
+-// cef_task_runner_t::GetForThread(threadId)->PostTask(task).
++// cef_task_tRunner::GetForThread(threadId)->PostTask(task).
+ ///
+ CEF_EXPORT int cef_post_task(cef_thread_id_t threadId, cef_task_t* task);
+ 
+ ///
+ // Post a task for delayed execution on the specified thread. Equivalent to
+-// using cef_task_runner_t::GetForThread(threadId)->PostDelayedTask(task,
++// using cef_task_tRunner::GetForThread(threadId)->PostDelayedTask(task,
+ // delay_ms).
+ ///
+ CEF_EXPORT int cef_post_delayed_task(cef_thread_id_t threadId, cef_task_t* task,
+Index: include/capi/cef_v8_capi.h
+===================================================================
+--- include/capi/cef_v8_capi.h	(revision 1640)
++++ include/capi/cef_v8_capi.h	(working copy)
+@@ -177,9 +177,9 @@
+ 
+ ///
+ // Structure that should be implemented to handle V8 accessor calls. Accessor
+-// identifiers are registered by calling cef_v8value_t::set_value_byaccessor().
+-// The functions of this structure will be called on the thread associated with
+-// the V8 accessor.
++// identifiers are registered by calling cef_v8value_t::set_value(). The
++// functions of this structure will be called on the thread associated with the
++// V8 accessor.
+ ///
+ typedef struct _cef_v8accessor_t {
+   ///
+Index: include/cef_dom.h
+===================================================================
+--- include/cef_dom.h	(revision 1640)
++++ include/cef_dom.h	(working copy)
+@@ -340,6 +340,22 @@
+   virtual void GetElementAttributes(AttributeMap& attrMap) =0;
+ 
+   ///
++  // Returns the number of attributes
++  ///
++  /*--cef()--*/
++  virtual size_t GetNumberOfElementAttributes() = 0;
++
++  ///
++  // Return the attribute by the index (0 based)
++  ///
++  /*--cef()--*/
++  virtual void GetElementAttributeByIdx(
++    size_t idx,
++    CefString& name,
++    CefString& value
++  ) = 0;
++
++  ///
+   // Set the value for the element attribute named |attrName|. Returns true on
+   // success.
+   ///
+@@ -352,6 +368,14 @@
+   ///
+   /*--cef()--*/
+   virtual CefString GetElementInnerText() =0;
++
++  ///
++  // Returns the (minimal) rectangle which encloses the element. It
++  // returns the same result as javascript getBoundingClientRect for
++  // the element node.
++  ///
++  /*--cef()--*/
++  virtual CefRect GetBoundingClientRect() = 0;
+ };
+ 
+ 
+Index: libcef/browser/content_browser_client.h
+===================================================================
+--- libcef/browser/content_browser_client.h	(revision 1640)
++++ libcef/browser/content_browser_client.h	(working copy)
+@@ -180,6 +180,9 @@
+   // Passes ownership.
+   scoped_ptr<net::ProxyConfigService> proxy_config_service() const;
+ 
++  // Iterate over browser_info_list_
++  //void ForEachBrowserInfo(void (*cb) (const CefBrowserInfo&) );
++
+  private:
+   CefBrowserMainParts* browser_main_parts_;
+ 
+Index: libcef/browser/context.h
+===================================================================
+--- libcef/browser/context.h	(revision 1640)
++++ libcef/browser/context.h	(working copy)
+@@ -72,6 +72,11 @@
+ 
+   CefTraceSubscriber* GetTraceSubscriber();
+ 
++  CefMainDelegate* main_delegate()
++  {
++    return main_delegate_.get();
++  }
++
+  private:
+   void OnContextInitialized();
+ 
+Index: libcef/renderer/dom_node_impl.cc
+===================================================================
+--- libcef/renderer/dom_node_impl.cc	(revision 1640)
++++ libcef/renderer/dom_node_impl.cc	(working copy)
+@@ -14,6 +14,7 @@
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "third_party/WebKit/public/platform/WebString.h"
++#include "third_party/WebKit/public/platform/WebRect.h"
+ #include "third_party/WebKit/public/web/WebDocument.h"
+ #include "third_party/WebKit/public/web/WebDOMEvent.h"
+ #include "third_party/WebKit/public/web/WebDOMEventListener.h"
+@@ -34,6 +35,7 @@
+ using blink::WebNode;
+ using blink::WebSelectElement;
+ using blink::WebString;
++using blink::WebRect;
+ 
+ namespace {
+ 
+@@ -412,6 +414,7 @@
+ }
+ 
+ void CefDOMNodeImpl::GetElementAttributes(AttributeMap& attrMap) {
++  LOG(INFO) << "CefDOMNodeImpl::GetElementAttributes\n";
+   if (!VerifyContext())
+     return;
+ 
+@@ -420,8 +423,11 @@
+     return;
+   }
+ 
++  LOG(INFO) << "not_.toConst";
+   const WebElement& element = node_.toConst<blink::WebElement>();
++  LOG(INFO) << "element.attributeCount() start ";
+   unsigned int len = element.attributeCount();
++  LOG(INFO) << "element.attributeCount() == " << len;
+   if (len == 0)
+     return;
+ 
+@@ -432,6 +438,39 @@
+   }
+ }
+ 
++size_t CefDOMNodeImpl::GetNumberOfElementAttributes()
++{
++  if (!VerifyContext())
++    return 0;
++
++  if (!node_.isElementNode()) {
++    NOTREACHED();
++    return 0;
++  }
++
++  const WebElement& element = node_.toConst<blink::WebElement>();
++  return element.attributeCount();
++}
++
++void CefDOMNodeImpl::GetElementAttributeByIdx(
++  size_t idx,
++  CefString& name,
++  CefString& value
++)
++{
++  if (!VerifyContext())
++    return;
++
++  if (!node_.isElementNode()) {
++    NOTREACHED();
++    return;
++  }
++
++  const WebElement& element = node_.toConst<blink::WebElement>();
++  name = element.attributeLocalName(idx);
++  value = element.attributeValue(idx);
++}
++
+ bool CefDOMNodeImpl::SetElementAttribute(const CefString& attrName,
+                                          const CefString& value) {
+   if (!VerifyContext())
+@@ -465,6 +504,20 @@
+   return str;
+ }
+ 
++CefRect CefDOMNodeImpl::GetBoundingClientRect() {
++  if (!VerifyContext())
++    return CefRect();
++
++  if (!node_.isElementNode()) {
++    NOTREACHED();
++    return CefRect();
++  }
++
++  WebElement element = node_.to<WebElement>();
++  WebRect wr = element.boundsInViewportSpace();
++  return CefRect(wr.x, wr.y, wr.width, wr.height);
++}
++
+ void CefDOMNodeImpl::Detach() {
+   document_ = NULL;
+   node_.assign(WebNode());
+Index: libcef/renderer/dom_node_impl.h
+===================================================================
+--- libcef/renderer/dom_node_impl.h	(revision 1640)
++++ libcef/renderer/dom_node_impl.h	(working copy)
+@@ -46,7 +46,10 @@
+   virtual void GetElementAttributes(AttributeMap& attrMap) OVERRIDE;
+   virtual bool SetElementAttribute(const CefString& attrName,
+                                    const CefString& value) OVERRIDE;
++  virtual size_t GetNumberOfElementAttributes() OVERRIDE;
++  virtual void GetElementAttributeByIdx(size_t idx, CefString& name, CefString& value) OVERRIDE;
+   virtual CefString GetElementInnerText() OVERRIDE;
++  virtual CefRect GetBoundingClientRect() OVERRIDE;
+ 
+   // Will be called from CefDOMDocumentImpl::Detach().
+   void Detach();
+Index: libcef_dll/cpptoc/app_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/app_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/app_cpptoc.cc	(working copy)
+@@ -41,7 +41,7 @@
+ }
+ 
+ void CEF_CALLBACK app_on_register_custom_schemes(struct _cef_app_t* self,
+-    struct _cef_scheme_registrar_t* registrar) {
++    cef_scheme_registrar_t* registrar) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -73,7 +73,7 @@
+   return CefResourceBundleHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_browser_process_handler_t* CEF_CALLBACK app_get_browser_process_handler(
++cef_browser_process_handler_t* CEF_CALLBACK app_get_browser_process_handler(
+     struct _cef_app_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -89,7 +89,7 @@
+   return CefBrowserProcessHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_render_process_handler_t* CEF_CALLBACK app_get_render_process_handler(
++cef_render_process_handler_t* CEF_CALLBACK app_get_render_process_handler(
+     struct _cef_app_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/browser_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/browser_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/browser_cpptoc.cc	(working copy)
+@@ -194,8 +194,7 @@
+   return _retval;
+ }
+ 
+-struct _cef_frame_t* CEF_CALLBACK browser_get_main_frame(
+-    struct _cef_browser_t* self) {
++cef_frame_t* CEF_CALLBACK browser_get_main_frame(struct _cef_browser_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -209,7 +208,7 @@
+   return CefFrameCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_frame_t* CEF_CALLBACK browser_get_focused_frame(
++cef_frame_t* CEF_CALLBACK browser_get_focused_frame(
+     struct _cef_browser_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -224,8 +223,8 @@
+   return CefFrameCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_frame_t* CEF_CALLBACK browser_get_frame_byident(
+-    struct _cef_browser_t* self, int64 identifier) {
++cef_frame_t* CEF_CALLBACK browser_get_frame_byident(struct _cef_browser_t* self,
++    int64 identifier) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -240,7 +239,7 @@
+   return CefFrameCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_frame_t* CEF_CALLBACK browser_get_frame(struct _cef_browser_t* self,
++cef_frame_t* CEF_CALLBACK browser_get_frame(struct _cef_browser_t* self,
+     const cef_string_t* name) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -335,7 +334,7 @@
+ }
+ 
+ int CEF_CALLBACK browser_send_process_message(struct _cef_browser_t* self,
+-    cef_process_id_t target_process, struct _cef_process_message_t* message) {
++    cef_process_id_t target_process, cef_process_message_t* message) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/browser_process_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/browser_process_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/browser_process_handler_cpptoc.cc	(working copy)
+@@ -49,7 +49,7 @@
+ 
+ void CEF_CALLBACK browser_process_handler_on_render_process_thread_created(
+     struct _cef_browser_process_handler_t* self,
+-    struct _cef_list_value_t* extra_info) {
++    cef_list_value_t* extra_info) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/client_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/client_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/client_cpptoc.cc	(working copy)
+@@ -30,7 +30,7 @@
+ 
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+-struct _cef_context_menu_handler_t* CEF_CALLBACK client_get_context_menu_handler(
++cef_context_menu_handler_t* CEF_CALLBACK client_get_context_menu_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -46,7 +46,7 @@
+   return CefContextMenuHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_dialog_handler_t* CEF_CALLBACK client_get_dialog_handler(
++cef_dialog_handler_t* CEF_CALLBACK client_get_dialog_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -62,7 +62,7 @@
+   return CefDialogHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_display_handler_t* CEF_CALLBACK client_get_display_handler(
++cef_display_handler_t* CEF_CALLBACK client_get_display_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -78,7 +78,7 @@
+   return CefDisplayHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_download_handler_t* CEF_CALLBACK client_get_download_handler(
++cef_download_handler_t* CEF_CALLBACK client_get_download_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -94,7 +94,7 @@
+   return CefDownloadHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_drag_handler_t* CEF_CALLBACK client_get_drag_handler(
++cef_drag_handler_t* CEF_CALLBACK client_get_drag_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -110,7 +110,7 @@
+   return CefDragHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_focus_handler_t* CEF_CALLBACK client_get_focus_handler(
++cef_focus_handler_t* CEF_CALLBACK client_get_focus_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -126,7 +126,7 @@
+   return CefFocusHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_geolocation_handler_t* CEF_CALLBACK client_get_geolocation_handler(
++cef_geolocation_handler_t* CEF_CALLBACK client_get_geolocation_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -142,7 +142,7 @@
+   return CefGeolocationHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_jsdialog_handler_t* CEF_CALLBACK client_get_jsdialog_handler(
++cef_jsdialog_handler_t* CEF_CALLBACK client_get_jsdialog_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -158,7 +158,7 @@
+   return CefJSDialogHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_keyboard_handler_t* CEF_CALLBACK client_get_keyboard_handler(
++cef_keyboard_handler_t* CEF_CALLBACK client_get_keyboard_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -174,7 +174,7 @@
+   return CefKeyboardHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_life_span_handler_t* CEF_CALLBACK client_get_life_span_handler(
++cef_life_span_handler_t* CEF_CALLBACK client_get_life_span_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -190,7 +190,7 @@
+   return CefLifeSpanHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_load_handler_t* CEF_CALLBACK client_get_load_handler(
++cef_load_handler_t* CEF_CALLBACK client_get_load_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -206,7 +206,7 @@
+   return CefLoadHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_render_handler_t* CEF_CALLBACK client_get_render_handler(
++cef_render_handler_t* CEF_CALLBACK client_get_render_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -222,7 +222,7 @@
+   return CefRenderHandlerCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_request_handler_t* CEF_CALLBACK client_get_request_handler(
++cef_request_handler_t* CEF_CALLBACK client_get_request_handler(
+     struct _cef_client_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -240,7 +240,7 @@
+ 
+ int CEF_CALLBACK client_on_process_message_received(struct _cef_client_t* self,
+     cef_browser_t* browser, cef_process_id_t source_process,
+-    struct _cef_process_message_t* message) {
++    cef_process_message_t* message) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/context_menu_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/context_menu_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/context_menu_handler_cpptoc.cc	(working copy)
+@@ -20,7 +20,7 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ void CEF_CALLBACK context_menu_handler_on_before_context_menu(
+-    struct _cef_context_menu_handler_t* self, cef_browser_t* browser,
++    struct _cef_context_menu_handler_t* self, struct _cef_browser_t* browser,
+     struct _cef_frame_t* frame, struct _cef_context_menu_params_t* params,
+     struct _cef_menu_model_t* model) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -54,7 +54,7 @@
+ }
+ 
+ int CEF_CALLBACK context_menu_handler_on_context_menu_command(
+-    struct _cef_context_menu_handler_t* self, cef_browser_t* browser,
++    struct _cef_context_menu_handler_t* self, struct _cef_browser_t* browser,
+     struct _cef_frame_t* frame, struct _cef_context_menu_params_t* params,
+     int command_id, cef_event_flags_t event_flags) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -88,7 +88,7 @@
+ }
+ 
+ void CEF_CALLBACK context_menu_handler_on_context_menu_dismissed(
+-    struct _cef_context_menu_handler_t* self, cef_browser_t* browser,
++    struct _cef_context_menu_handler_t* self, struct _cef_browser_t* browser,
+     struct _cef_frame_t* frame) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/dialog_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/dialog_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/dialog_handler_cpptoc.cc	(working copy)
+@@ -19,7 +19,7 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ int CEF_CALLBACK dialog_handler_on_file_dialog(
+-    struct _cef_dialog_handler_t* self, cef_browser_t* browser,
++    struct _cef_dialog_handler_t* self, struct _cef_browser_t* browser,
+     cef_file_dialog_mode_t mode, const cef_string_t* title,
+     const cef_string_t* default_file_name, cef_string_list_t accept_types,
+     cef_file_dialog_callback_t* callback) {
+Index: libcef_dll/cpptoc/display_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/display_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/display_handler_cpptoc.cc	(working copy)
+@@ -18,8 +18,8 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ void CEF_CALLBACK display_handler_on_address_change(
+-    struct _cef_display_handler_t* self, cef_browser_t* browser,
+-    struct _cef_frame_t* frame, const cef_string_t* url) {
++    struct _cef_display_handler_t* self, struct _cef_browser_t* browser,
++    cef_frame_t* frame, const cef_string_t* url) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -46,7 +46,7 @@
+ }
+ 
+ void CEF_CALLBACK display_handler_on_title_change(
+-    struct _cef_display_handler_t* self, cef_browser_t* browser,
++    struct _cef_display_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* title) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -66,7 +66,7 @@
+ }
+ 
+ int CEF_CALLBACK display_handler_on_tooltip(struct _cef_display_handler_t* self,
+-    cef_browser_t* browser, cef_string_t* text) {
++    struct _cef_browser_t* browser, cef_string_t* text) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -91,7 +91,7 @@
+ }
+ 
+ void CEF_CALLBACK display_handler_on_status_message(
+-    struct _cef_display_handler_t* self, cef_browser_t* browser,
++    struct _cef_display_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* value) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -111,7 +111,7 @@
+ }
+ 
+ int CEF_CALLBACK display_handler_on_console_message(
+-    struct _cef_display_handler_t* self, cef_browser_t* browser,
++    struct _cef_display_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* message, const cef_string_t* source, int line) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/domnode_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/domnode_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/domnode_cpptoc.cc	(working copy)
+@@ -412,6 +412,50 @@
+   transfer_string_map_contents(attrMapMap, attrMap);
+ }
+ 
++size_t CEF_CALLBACK domnode_get_number_of_element_attributes(
++    struct _cef_domnode_t* self) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  DCHECK(self);
++  if (!self)
++    return 0;
++
++  // Execute
++  size_t _retval = CefDOMNodeCppToC::Get(self)->GetNumberOfElementAttributes();
++
++  // Return type: simple
++  return _retval;
++}
++
++void CEF_CALLBACK domnode_get_element_attribute_by_idx(
++    struct _cef_domnode_t* self, size_t idx, cef_string_t* name,
++    cef_string_t* value) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  DCHECK(self);
++  if (!self)
++    return;
++  // Verify param: name; type: string_byref
++  DCHECK(name);
++  if (!name)
++    return;
++  // Verify param: value; type: string_byref
++  DCHECK(value);
++  if (!value)
++    return;
++
++  // Translate param: name; type: string_byref
++  CefString nameStr(name);
++  // Translate param: value; type: string_byref
++  CefString valueStr(value);
++
++  // Execute
++  CefDOMNodeCppToC::Get(self)->GetElementAttributeByIdx(
++      idx,
++      nameStr,
++      valueStr);
++}
++
+ int CEF_CALLBACK domnode_set_element_attribute(struct _cef_domnode_t* self,
+     const cef_string_t* attrName, const cef_string_t* value) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -452,7 +496,22 @@
+   return _retval.DetachToUserFree();
+ }
+ 
++cef_rect_t CEF_CALLBACK domnode_get_bounding_client_rect(
++    struct _cef_domnode_t* self) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
++  DCHECK(self);
++  if (!self)
++    return CefRect();
++
++  // Execute
++  cef_rect_t _retval = CefDOMNodeCppToC::Get(self)->GetBoundingClientRect();
++
++  // Return type: simple
++  return _retval;
++}
++
++
+ // CONSTRUCTOR - Do not edit by hand.
+ 
+ CefDOMNodeCppToC::CefDOMNodeCppToC(CefDOMNode* cls)
+@@ -482,8 +541,13 @@
+   struct_.struct_.has_element_attribute = domnode_has_element_attribute;
+   struct_.struct_.get_element_attribute = domnode_get_element_attribute;
+   struct_.struct_.get_element_attributes = domnode_get_element_attributes;
++  struct_.struct_.get_number_of_element_attributes =
++      domnode_get_number_of_element_attributes;
++  struct_.struct_.get_element_attribute_by_idx =
++      domnode_get_element_attribute_by_idx;
+   struct_.struct_.set_element_attribute = domnode_set_element_attribute;
+   struct_.struct_.get_element_inner_text = domnode_get_element_inner_text;
++  struct_.struct_.get_bounding_client_rect = domnode_get_bounding_client_rect;
+ }
+ 
+ #ifndef NDEBUG
+Index: libcef_dll/cpptoc/download_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/download_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/download_handler_cpptoc.cc	(working copy)
+@@ -20,9 +20,8 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ void CEF_CALLBACK download_handler_on_before_download(
+-    struct _cef_download_handler_t* self, cef_browser_t* browser,
+-    struct _cef_download_item_t* download_item,
+-    const cef_string_t* suggested_name,
++    struct _cef_download_handler_t* self, struct _cef_browser_t* browser,
++    cef_download_item_t* download_item, const cef_string_t* suggested_name,
+     cef_before_download_callback_t* callback) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -55,8 +54,8 @@
+ }
+ 
+ void CEF_CALLBACK download_handler_on_download_updated(
+-    struct _cef_download_handler_t* self, cef_browser_t* browser,
+-    struct _cef_download_item_t* download_item,
++    struct _cef_download_handler_t* self, struct _cef_browser_t* browser,
++    cef_download_item_t* download_item,
+     cef_download_item_callback_t* callback) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/drag_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/drag_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/drag_handler_cpptoc.cc	(working copy)
+@@ -18,7 +18,7 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ int CEF_CALLBACK drag_handler_on_drag_enter(struct _cef_drag_handler_t* self,
+-    cef_browser_t* browser, cef_drag_data_t* dragData,
++    struct _cef_browser_t* browser, cef_drag_data_t* dragData,
+     cef_drag_operations_mask_t mask) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/focus_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/focus_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/focus_handler_cpptoc.cc	(working copy)
+@@ -17,7 +17,7 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ void CEF_CALLBACK focus_handler_on_take_focus(struct _cef_focus_handler_t* self,
+-    cef_browser_t* browser, int next) {
++    struct _cef_browser_t* browser, int next) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -35,7 +35,7 @@
+ }
+ 
+ int CEF_CALLBACK focus_handler_on_set_focus(struct _cef_focus_handler_t* self,
+-    cef_browser_t* browser, cef_focus_source_t source) {
++    struct _cef_browser_t* browser, cef_focus_source_t source) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -56,7 +56,7 @@
+ }
+ 
+ void CEF_CALLBACK focus_handler_on_got_focus(struct _cef_focus_handler_t* self,
+-    cef_browser_t* browser) {
++    struct _cef_browser_t* browser) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/frame_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/frame_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/frame_cpptoc.cc	(working copy)
+@@ -317,7 +317,8 @@
+   return _retval.DetachToUserFree();
+ }
+ 
+-cef_browser_t* CEF_CALLBACK frame_get_browser(struct _cef_frame_t* self) {
++struct _cef_browser_t* CEF_CALLBACK frame_get_browser(
++    struct _cef_frame_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -331,8 +332,7 @@
+   return CefBrowserCppToC::Wrap(_retval);
+ }
+ 
+-struct _cef_v8context_t* CEF_CALLBACK frame_get_v8context(
+-    struct _cef_frame_t* self) {
++cef_v8context_t* CEF_CALLBACK frame_get_v8context(struct _cef_frame_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -347,7 +347,7 @@
+ }
+ 
+ void CEF_CALLBACK frame_visit_dom(struct _cef_frame_t* self,
+-    cef_domvisitor_t* visitor) {
++    struct _cef_domvisitor_t* visitor) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/geolocation_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/geolocation_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/geolocation_handler_cpptoc.cc	(working copy)
+@@ -18,7 +18,7 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ void CEF_CALLBACK geolocation_handler_on_request_geolocation_permission(
+-    struct _cef_geolocation_handler_t* self, cef_browser_t* browser,
++    struct _cef_geolocation_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* requesting_url, int request_id,
+     cef_geolocation_callback_t* callback) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -48,7 +48,7 @@
+ }
+ 
+ void CEF_CALLBACK geolocation_handler_on_cancel_geolocation_permission(
+-    struct _cef_geolocation_handler_t* self, cef_browser_t* browser,
++    struct _cef_geolocation_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* requesting_url, int request_id) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/jsdialog_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/jsdialog_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/jsdialog_handler_cpptoc.cc	(working copy)
+@@ -18,7 +18,7 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ int CEF_CALLBACK jsdialog_handler_on_jsdialog(
+-    struct _cef_jsdialog_handler_t* self, cef_browser_t* browser,
++    struct _cef_jsdialog_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* origin_url, const cef_string_t* accept_lang,
+     cef_jsdialog_type_t dialog_type, const cef_string_t* message_text,
+     const cef_string_t* default_prompt_text, cef_jsdialog_callback_t* callback,
+@@ -70,7 +70,7 @@
+ }
+ 
+ int CEF_CALLBACK jsdialog_handler_on_before_unload_dialog(
+-    struct _cef_jsdialog_handler_t* self, cef_browser_t* browser,
++    struct _cef_jsdialog_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* message_text, int is_reload,
+     cef_jsdialog_callback_t* callback) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -100,7 +100,7 @@
+ }
+ 
+ void CEF_CALLBACK jsdialog_handler_on_reset_dialog_state(
+-    struct _cef_jsdialog_handler_t* self, cef_browser_t* browser) {
++    struct _cef_jsdialog_handler_t* self, struct _cef_browser_t* browser) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -117,7 +117,7 @@
+ }
+ 
+ void CEF_CALLBACK jsdialog_handler_on_dialog_closed(
+-    struct _cef_jsdialog_handler_t* self, cef_browser_t* browser) {
++    struct _cef_jsdialog_handler_t* self, struct _cef_browser_t* browser) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/keyboard_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/keyboard_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/keyboard_handler_cpptoc.cc	(working copy)
+@@ -17,7 +17,7 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ int CEF_CALLBACK keyboard_handler_on_pre_key_event(
+-    struct _cef_keyboard_handler_t* self, cef_browser_t* browser,
++    struct _cef_keyboard_handler_t* self, struct _cef_browser_t* browser,
+     const struct _cef_key_event_t* event, cef_event_handle_t os_event,
+     int* is_keyboard_shortcut) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -62,7 +62,7 @@
+ }
+ 
+ int CEF_CALLBACK keyboard_handler_on_key_event(
+-    struct _cef_keyboard_handler_t* self, cef_browser_t* browser,
++    struct _cef_keyboard_handler_t* self, struct _cef_browser_t* browser,
+     const struct _cef_key_event_t* event, cef_event_handle_t os_event) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/life_span_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/life_span_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/life_span_handler_cpptoc.cc	(working copy)
+@@ -19,11 +19,11 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ int CEF_CALLBACK life_span_handler_on_before_popup(
+-    struct _cef_life_span_handler_t* self, cef_browser_t* browser,
++    struct _cef_life_span_handler_t* self, struct _cef_browser_t* browser,
+     cef_frame_t* frame, const cef_string_t* target_url,
+     const cef_string_t* target_frame_name,
+     const struct _cef_popup_features_t* popupFeatures,
+-    cef_window_info_t* windowInfo, cef_client_t** client,
++    cef_window_info_t* windowInfo, struct _cef_client_t** client,
+     struct _cef_browser_settings_t* settings, int* no_javascript_access) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -118,7 +118,7 @@
+ }
+ 
+ void CEF_CALLBACK life_span_handler_on_after_created(
+-    struct _cef_life_span_handler_t* self, cef_browser_t* browser) {
++    struct _cef_life_span_handler_t* self, struct _cef_browser_t* browser) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -135,7 +135,7 @@
+ }
+ 
+ int CEF_CALLBACK life_span_handler_run_modal(
+-    struct _cef_life_span_handler_t* self, cef_browser_t* browser) {
++    struct _cef_life_span_handler_t* self, struct _cef_browser_t* browser) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -155,7 +155,7 @@
+ }
+ 
+ int CEF_CALLBACK life_span_handler_do_close(
+-    struct _cef_life_span_handler_t* self, cef_browser_t* browser) {
++    struct _cef_life_span_handler_t* self, struct _cef_browser_t* browser) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -175,7 +175,7 @@
+ }
+ 
+ void CEF_CALLBACK life_span_handler_on_before_close(
+-    struct _cef_life_span_handler_t* self, cef_browser_t* browser) {
++    struct _cef_life_span_handler_t* self, struct _cef_browser_t* browser) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/load_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/load_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/load_handler_cpptoc.cc	(working copy)
+@@ -18,8 +18,8 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ void CEF_CALLBACK load_handler_on_loading_state_change(
+-    struct _cef_load_handler_t* self, cef_browser_t* browser, int isLoading,
+-    int canGoBack, int canGoForward) {
++    struct _cef_load_handler_t* self, struct _cef_browser_t* browser,
++    int isLoading, int canGoBack, int canGoForward) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -39,7 +39,7 @@
+ }
+ 
+ void CEF_CALLBACK load_handler_on_load_start(struct _cef_load_handler_t* self,
+-    cef_browser_t* browser, cef_frame_t* frame) {
++    struct _cef_browser_t* browser, struct _cef_frame_t* frame) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -61,7 +61,8 @@
+ }
+ 
+ void CEF_CALLBACK load_handler_on_load_end(struct _cef_load_handler_t* self,
+-    cef_browser_t* browser, cef_frame_t* frame, int httpStatusCode) {
++    struct _cef_browser_t* browser, struct _cef_frame_t* frame,
++    int httpStatusCode) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -84,8 +85,9 @@
+ }
+ 
+ void CEF_CALLBACK load_handler_on_load_error(struct _cef_load_handler_t* self,
+-    cef_browser_t* browser, cef_frame_t* frame, cef_errorcode_t errorCode,
+-    const cef_string_t* errorText, const cef_string_t* failedUrl) {
++    struct _cef_browser_t* browser, struct _cef_frame_t* frame,
++    cef_errorcode_t errorCode, const cef_string_t* errorText,
++    const cef_string_t* failedUrl) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/process_message_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/process_message_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/process_message_cpptoc.cc	(working copy)
+@@ -96,7 +96,7 @@
+   return _retval.DetachToUserFree();
+ }
+ 
+-struct _cef_list_value_t* CEF_CALLBACK process_message_get_argument_list(
++cef_list_value_t* CEF_CALLBACK process_message_get_argument_list(
+     struct _cef_process_message_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/render_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/render_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/render_handler_cpptoc.cc	(working copy)
+@@ -17,7 +17,7 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ int CEF_CALLBACK render_handler_get_root_screen_rect(
+-    struct _cef_render_handler_t* self, cef_browser_t* browser,
++    struct _cef_render_handler_t* self, struct _cef_browser_t* browser,
+     cef_rect_t* rect) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -50,7 +50,7 @@
+ }
+ 
+ int CEF_CALLBACK render_handler_get_view_rect(
+-    struct _cef_render_handler_t* self, cef_browser_t* browser,
++    struct _cef_render_handler_t* self, struct _cef_browser_t* browser,
+     cef_rect_t* rect) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -83,8 +83,8 @@
+ }
+ 
+ int CEF_CALLBACK render_handler_get_screen_point(
+-    struct _cef_render_handler_t* self, cef_browser_t* browser, int viewX,
+-    int viewY, int* screenX, int* screenY) {
++    struct _cef_render_handler_t* self, struct _cef_browser_t* browser,
++    int viewX, int viewY, int* screenX, int* screenY) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -128,7 +128,7 @@
+ }
+ 
+ int CEF_CALLBACK render_handler_get_screen_info(
+-    struct _cef_render_handler_t* self, cef_browser_t* browser,
++    struct _cef_render_handler_t* self, struct _cef_browser_t* browser,
+     struct _cef_screen_info_t* screen_info) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -163,7 +163,8 @@
+ }
+ 
+ void CEF_CALLBACK render_handler_on_popup_show(
+-    struct _cef_render_handler_t* self, cef_browser_t* browser, int show) {
++    struct _cef_render_handler_t* self, struct _cef_browser_t* browser,
++    int show) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -181,7 +182,7 @@
+ }
+ 
+ void CEF_CALLBACK render_handler_on_popup_size(
+-    struct _cef_render_handler_t* self, cef_browser_t* browser,
++    struct _cef_render_handler_t* self, struct _cef_browser_t* browser,
+     const cef_rect_t* rect) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -207,7 +208,7 @@
+ }
+ 
+ void CEF_CALLBACK render_handler_on_paint(struct _cef_render_handler_t* self,
+-    cef_browser_t* browser, cef_paint_element_type_t type,
++    struct _cef_browser_t* browser, cef_paint_element_type_t type,
+     size_t dirtyRectsCount, cef_rect_t const* dirtyRects, const void* buffer,
+     int width, int height) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -247,7 +248,7 @@
+ }
+ 
+ void CEF_CALLBACK render_handler_on_cursor_change(
+-    struct _cef_render_handler_t* self, cef_browser_t* browser,
++    struct _cef_render_handler_t* self, struct _cef_browser_t* browser,
+     cef_cursor_handle_t cursor) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -266,7 +267,7 @@
+ }
+ 
+ void CEF_CALLBACK render_handler_on_scroll_offset_changed(
+-    struct _cef_render_handler_t* self, cef_browser_t* browser) {
++    struct _cef_render_handler_t* self, struct _cef_browser_t* browser) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/render_process_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/render_process_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/render_process_handler_cpptoc.cc	(working copy)
+@@ -56,7 +56,8 @@
+ }
+ 
+ void CEF_CALLBACK render_process_handler_on_browser_created(
+-    struct _cef_render_process_handler_t* self, cef_browser_t* browser) {
++    struct _cef_render_process_handler_t* self,
++    struct _cef_browser_t* browser) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -73,7 +74,8 @@
+ }
+ 
+ void CEF_CALLBACK render_process_handler_on_browser_destroyed(
+-    struct _cef_render_process_handler_t* self, cef_browser_t* browser) {
++    struct _cef_render_process_handler_t* self,
++    struct _cef_browser_t* browser) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -89,7 +91,7 @@
+       CefBrowserCToCpp::Wrap(browser));
+ }
+ 
+-cef_load_handler_t* CEF_CALLBACK render_process_handler_get_load_handler(
++struct _cef_load_handler_t* CEF_CALLBACK render_process_handler_get_load_handler(
+     struct _cef_render_process_handler_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -106,8 +108,8 @@
+ }
+ 
+ int CEF_CALLBACK render_process_handler_on_before_navigation(
+-    struct _cef_render_process_handler_t* self, cef_browser_t* browser,
+-    cef_frame_t* frame, struct _cef_request_t* request,
++    struct _cef_render_process_handler_t* self, struct _cef_browser_t* browser,
++    struct _cef_frame_t* frame, struct _cef_request_t* request,
+     cef_navigation_type_t navigation_type, int is_redirect) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -140,8 +142,8 @@
+ }
+ 
+ void CEF_CALLBACK render_process_handler_on_context_created(
+-    struct _cef_render_process_handler_t* self, cef_browser_t* browser,
+-    cef_frame_t* frame, struct _cef_v8context_t* context) {
++    struct _cef_render_process_handler_t* self, struct _cef_browser_t* browser,
++    struct _cef_frame_t* frame, struct _cef_v8context_t* context) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -168,8 +170,8 @@
+ }
+ 
+ void CEF_CALLBACK render_process_handler_on_context_released(
+-    struct _cef_render_process_handler_t* self, cef_browser_t* browser,
+-    cef_frame_t* frame, struct _cef_v8context_t* context) {
++    struct _cef_render_process_handler_t* self, struct _cef_browser_t* browser,
++    struct _cef_frame_t* frame, struct _cef_v8context_t* context) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -196,8 +198,8 @@
+ }
+ 
+ void CEF_CALLBACK render_process_handler_on_uncaught_exception(
+-    struct _cef_render_process_handler_t* self, cef_browser_t* browser,
+-    cef_frame_t* frame, struct _cef_v8context_t* context,
++    struct _cef_render_process_handler_t* self, struct _cef_browser_t* browser,
++    struct _cef_frame_t* frame, struct _cef_v8context_t* context,
+     struct _cef_v8exception_t* exception,
+     struct _cef_v8stack_trace_t* stackTrace) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -236,8 +238,8 @@
+ }
+ 
+ void CEF_CALLBACK render_process_handler_on_focused_node_changed(
+-    struct _cef_render_process_handler_t* self, cef_browser_t* browser,
+-    cef_frame_t* frame, cef_domnode_t* node) {
++    struct _cef_render_process_handler_t* self, struct _cef_browser_t* browser,
++    struct _cef_frame_t* frame, struct _cef_domnode_t* node) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -257,8 +259,8 @@
+ }
+ 
+ int CEF_CALLBACK render_process_handler_on_process_message_received(
+-    struct _cef_render_process_handler_t* self, cef_browser_t* browser,
+-    cef_process_id_t source_process, cef_process_message_t* message) {
++    struct _cef_render_process_handler_t* self, struct _cef_browser_t* browser,
++    cef_process_id_t source_process, struct _cef_process_message_t* message) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/request_context_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/request_context_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/request_context_cpptoc.cc	(working copy)
+@@ -27,7 +27,7 @@
+ }
+ 
+ CEF_EXPORT cef_request_context_t* cef_request_context_create_context(
+-    struct _cef_request_context_handler_t* handler) {
++    cef_request_context_handler_t* handler) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   // Unverified params: handler
+@@ -78,7 +78,7 @@
+   return _retval;
+ }
+ 
+-struct _cef_request_context_handler_t* CEF_CALLBACK request_context_get_handler(
++cef_request_context_handler_t* CEF_CALLBACK request_context_get_handler(
+     struct _cef_request_context_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/request_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/request_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/request_handler_cpptoc.cc	(working copy)
+@@ -24,8 +24,8 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ int CEF_CALLBACK request_handler_on_before_browse(
+-    struct _cef_request_handler_t* self, cef_browser_t* browser,
+-    cef_frame_t* frame, cef_request_t* request, int is_redirect) {
++    struct _cef_request_handler_t* self, struct _cef_browser_t* browser,
++    cef_frame_t* frame, struct _cef_request_t* request, int is_redirect) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -56,8 +56,8 @@
+ }
+ 
+ int CEF_CALLBACK request_handler_on_before_resource_load(
+-    struct _cef_request_handler_t* self, cef_browser_t* browser,
+-    cef_frame_t* frame, cef_request_t* request) {
++    struct _cef_request_handler_t* self, struct _cef_browser_t* browser,
++    cef_frame_t* frame, struct _cef_request_t* request) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -87,8 +87,8 @@
+ }
+ 
+ struct _cef_resource_handler_t* CEF_CALLBACK request_handler_get_resource_handler(
+-    struct _cef_request_handler_t* self, cef_browser_t* browser,
+-    cef_frame_t* frame, cef_request_t* request) {
++    struct _cef_request_handler_t* self, struct _cef_browser_t* browser,
++    cef_frame_t* frame, struct _cef_request_t* request) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -119,7 +119,7 @@
+ }
+ 
+ void CEF_CALLBACK request_handler_on_resource_redirect(
+-    struct _cef_request_handler_t* self, cef_browser_t* browser,
++    struct _cef_request_handler_t* self, struct _cef_browser_t* browser,
+     cef_frame_t* frame, const cef_string_t* old_url, cef_string_t* new_url) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -155,7 +155,7 @@
+ }
+ 
+ int CEF_CALLBACK request_handler_get_auth_credentials(
+-    struct _cef_request_handler_t* self, cef_browser_t* browser,
++    struct _cef_request_handler_t* self, struct _cef_browser_t* browser,
+     cef_frame_t* frame, int isProxy, const cef_string_t* host, int port,
+     const cef_string_t* realm, const cef_string_t* scheme,
+     cef_auth_callback_t* callback) {
+@@ -202,7 +202,7 @@
+ }
+ 
+ int CEF_CALLBACK request_handler_on_quota_request(
+-    struct _cef_request_handler_t* self, cef_browser_t* browser,
++    struct _cef_request_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* origin_url, int64 new_size,
+     cef_quota_callback_t* callback) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -235,7 +235,7 @@
+ }
+ 
+ void CEF_CALLBACK request_handler_on_protocol_execution(
+-    struct _cef_request_handler_t* self, cef_browser_t* browser,
++    struct _cef_request_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* url, int* allow_os_execution) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -299,9 +299,9 @@
+ }
+ 
+ int CEF_CALLBACK request_handler_on_before_plugin_load(
+-    struct _cef_request_handler_t* self, cef_browser_t* browser,
++    struct _cef_request_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* url, const cef_string_t* policy_url,
+-    struct _cef_web_plugin_info_t* info) {
++    cef_web_plugin_info_t* info) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+@@ -329,7 +329,7 @@
+ }
+ 
+ void CEF_CALLBACK request_handler_on_plugin_crashed(
+-    struct _cef_request_handler_t* self, cef_browser_t* browser,
++    struct _cef_request_handler_t* self, struct _cef_browser_t* browser,
+     const cef_string_t* plugin_path) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -352,7 +352,7 @@
+ }
+ 
+ void CEF_CALLBACK request_handler_on_render_process_terminated(
+-    struct _cef_request_handler_t* self, cef_browser_t* browser,
++    struct _cef_request_handler_t* self, struct _cef_browser_t* browser,
+     cef_termination_status_t status) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/resource_handler_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/resource_handler_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/resource_handler_cpptoc.cc	(working copy)
+@@ -19,7 +19,7 @@
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+ int CEF_CALLBACK resource_handler_process_request(
+-    struct _cef_resource_handler_t* self, cef_request_t* request,
++    struct _cef_resource_handler_t* self, struct _cef_request_t* request,
+     cef_callback_t* callback) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+Index: libcef_dll/cpptoc/scheme_handler_factory_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/scheme_handler_factory_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/scheme_handler_factory_cpptoc.cc	(working copy)
+@@ -19,10 +19,10 @@
+ 
+ // MEMBER FUNCTIONS - Body may be edited by hand.
+ 
+-cef_resource_handler_t* CEF_CALLBACK scheme_handler_factory_create(
+-    struct _cef_scheme_handler_factory_t* self, cef_browser_t* browser,
+-    cef_frame_t* frame, const cef_string_t* scheme_name,
+-    cef_request_t* request) {
++struct _cef_resource_handler_t* CEF_CALLBACK scheme_handler_factory_create(
++    struct _cef_scheme_handler_factory_t* self, struct _cef_browser_t* browser,
++    struct _cef_frame_t* frame, const cef_string_t* scheme_name,
++    struct _cef_request_t* request) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/v8context_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/v8context_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/v8context_cpptoc.cc	(working copy)
+@@ -83,7 +83,7 @@
+   return _retval;
+ }
+ 
+-cef_browser_t* CEF_CALLBACK v8context_get_browser(
++struct _cef_browser_t* CEF_CALLBACK v8context_get_browser(
+     struct _cef_v8context_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -98,7 +98,8 @@
+   return CefBrowserCppToC::Wrap(_retval);
+ }
+ 
+-cef_frame_t* CEF_CALLBACK v8context_get_frame(struct _cef_v8context_t* self) {
++struct _cef_frame_t* CEF_CALLBACK v8context_get_frame(
++    struct _cef_v8context_t* self) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   DCHECK(self);
+Index: libcef_dll/cpptoc/xml_reader_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/xml_reader_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/xml_reader_cpptoc.cc	(working copy)
+@@ -16,8 +16,9 @@
+ 
+ // GLOBAL FUNCTIONS - Body may be edited by hand.
+ 
+-CEF_EXPORT cef_xml_reader_t* cef_xml_reader_create(cef_stream_reader_t* stream,
+-    cef_xml_encoding_type_t encodingType, const cef_string_t* URI) {
++CEF_EXPORT cef_xml_reader_t* cef_xml_reader_create(
++    struct _cef_stream_reader_t* stream, cef_xml_encoding_type_t encodingType,
++    const cef_string_t* URI) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   // Verify param: stream; type: refptr_same
+Index: libcef_dll/cpptoc/zip_reader_cpptoc.cc
+===================================================================
+--- libcef_dll/cpptoc/zip_reader_cpptoc.cc	(revision 1640)
++++ libcef_dll/cpptoc/zip_reader_cpptoc.cc	(working copy)
+@@ -17,7 +17,7 @@
+ // GLOBAL FUNCTIONS - Body may be edited by hand.
+ 
+ CEF_EXPORT cef_zip_reader_t* cef_zip_reader_create(
+-    cef_stream_reader_t* stream) {
++    struct _cef_stream_reader_t* stream) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   // Verify param: stream; type: refptr_same
+Index: libcef_dll/ctocpp/domnode_ctocpp.cc
+===================================================================
+--- libcef_dll/ctocpp/domnode_ctocpp.cc	(revision 1640)
++++ libcef_dll/ctocpp/domnode_ctocpp.cc	(working copy)
+@@ -388,6 +388,33 @@
+   }
+ }
+ 
++size_t CefDOMNodeCToCpp::GetNumberOfElementAttributes() {
++  if (CEF_MEMBER_MISSING(struct_, get_number_of_element_attributes))
++    return 0;
++
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Execute
++  size_t _retval = struct_->get_number_of_element_attributes(struct_);
++
++  // Return type: simple
++  return _retval;
++}
++
++void CefDOMNodeCToCpp::GetElementAttributeByIdx(size_t idx, CefString& name,
++    CefString& value) {
++  if (CEF_MEMBER_MISSING(struct_, get_element_attribute_by_idx))
++    return;
++
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Execute
++  struct_->get_element_attribute_by_idx(struct_,
++      idx,
++      name.GetWritableStruct(),
++      value.GetWritableStruct());
++}
++
+ bool CefDOMNodeCToCpp::SetElementAttribute(const CefString& attrName,
+     const CefString& value) {
+   if (CEF_MEMBER_MISSING(struct_, set_element_attribute))
+@@ -428,7 +455,20 @@
+   return _retvalStr;
+ }
+ 
++CefRect CefDOMNodeCToCpp::GetBoundingClientRect() {
++  if (CEF_MEMBER_MISSING(struct_, get_bounding_client_rect))
++    return CefRect();
+ 
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Execute
++  cef_rect_t _retval = struct_->get_bounding_client_rect(struct_);
++
++  // Return type: simple
++  return _retval;
++}
++
++
+ #ifndef NDEBUG
+ template<> long CefCToCpp<CefDOMNodeCToCpp, CefDOMNode,
+     cef_domnode_t>::DebugObjCt = 0;
+Index: libcef_dll/ctocpp/domnode_ctocpp.h
+===================================================================
+--- libcef_dll/ctocpp/domnode_ctocpp.h	(revision 1640)
++++ libcef_dll/ctocpp/domnode_ctocpp.h	(working copy)
+@@ -57,9 +57,13 @@
+   virtual bool HasElementAttribute(const CefString& attrName) OVERRIDE;
+   virtual CefString GetElementAttribute(const CefString& attrName) OVERRIDE;
+   virtual void GetElementAttributes(AttributeMap& attrMap) OVERRIDE;
++  virtual size_t GetNumberOfElementAttributes() OVERRIDE;
++  virtual void GetElementAttributeByIdx(size_t idx, CefString& name,
++      CefString& value) OVERRIDE;
+   virtual bool SetElementAttribute(const CefString& attrName,
+       const CefString& value) OVERRIDE;
+   virtual CefString GetElementInnerText() OVERRIDE;
++  virtual CefRect GetBoundingClientRect() OVERRIDE;
+ };
+ 
+ #endif  // USING_CEF_SHARED
+Index: libcef_dll/libcef_dll.cc
+===================================================================
+--- libcef_dll/libcef_dll.cc	(revision 1640)
++++ libcef_dll/libcef_dll.cc	(working copy)
+@@ -10,28 +10,28 @@
+ // for more information.
+ //
+ 
++#include "include/cef_scheme.h"
++#include "include/capi/cef_scheme_capi.h"
++#include "include/cef_process_util.h"
++#include "include/capi/cef_process_util_capi.h"
++#include "include/cef_geolocation.h"
++#include "include/capi/cef_geolocation_capi.h"
+ #include "include/cef_app.h"
+ #include "include/capi/cef_app_capi.h"
+-#include "include/cef_geolocation.h"
+-#include "include/capi/cef_geolocation_capi.h"
++#include "include/cef_web_plugin.h"
++#include "include/capi/cef_web_plugin_capi.h"
+ #include "include/cef_origin_whitelist.h"
+ #include "include/capi/cef_origin_whitelist_capi.h"
++#include "include/cef_trace.h"
++#include "include/capi/cef_trace_capi.h"
++#include "include/cef_task.h"
++#include "include/capi/cef_task_capi.h"
++#include "include/cef_v8.h"
++#include "include/capi/cef_v8_capi.h"
+ #include "include/cef_path_util.h"
+ #include "include/capi/cef_path_util_capi.h"
+-#include "include/cef_process_util.h"
+-#include "include/capi/cef_process_util_capi.h"
+-#include "include/cef_scheme.h"
+-#include "include/capi/cef_scheme_capi.h"
+-#include "include/cef_task.h"
+-#include "include/capi/cef_task_capi.h"
+-#include "include/cef_trace.h"
+-#include "include/capi/cef_trace_capi.h"
+ #include "include/cef_url.h"
+ #include "include/capi/cef_url_capi.h"
+-#include "include/cef_v8.h"
+-#include "include/capi/cef_v8_capi.h"
+-#include "include/cef_web_plugin.h"
+-#include "include/capi/cef_web_plugin_capi.h"
+ #include "libcef_dll/cpptoc/allow_certificate_error_callback_cpptoc.h"
+ #include "libcef_dll/cpptoc/auth_callback_cpptoc.h"
+ #include "libcef_dll/cpptoc/before_download_callback_cpptoc.h"
+@@ -108,6 +108,70 @@
+ 
+ // GLOBAL FUNCTIONS - Body may be edited by hand.
+ 
++CEF_EXPORT int cef_register_scheme_handler_factory(
++    const cef_string_t* scheme_name, const cef_string_t* domain_name,
++    struct _cef_scheme_handler_factory_t* factory) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: scheme_name; type: string_byref_const
++  DCHECK(scheme_name);
++  if (!scheme_name)
++    return 0;
++  // Unverified params: domain_name, factory
++
++  // Execute
++  bool _retval = CefRegisterSchemeHandlerFactory(
++      CefString(scheme_name),
++      CefString(domain_name),
++      CefSchemeHandlerFactoryCToCpp::Wrap(factory));
++
++  // Return type: bool
++  return _retval;
++}
++
++CEF_EXPORT int cef_clear_scheme_handler_factories() {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Execute
++  bool _retval = CefClearSchemeHandlerFactories();
++
++  // Return type: bool
++  return _retval;
++}
++
++CEF_EXPORT int cef_launch_process(struct _cef_command_line_t* command_line) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: command_line; type: refptr_same
++  DCHECK(command_line);
++  if (!command_line)
++    return 0;
++
++  // Execute
++  bool _retval = CefLaunchProcess(
++      CefCommandLineCppToC::Unwrap(command_line));
++
++  // Return type: bool
++  return _retval;
++}
++
++CEF_EXPORT int cef_get_geolocation(
++    struct _cef_get_geolocation_callback_t* callback) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: callback; type: refptr_diff
++  DCHECK(callback);
++  if (!callback)
++    return 0;
++
++  // Execute
++  bool _retval = CefGetGeolocation(
++      CefGetGeolocationCallbackCToCpp::Wrap(callback));
++
++  // Return type: bool
++  return _retval;
++}
++
+ CEF_EXPORT int cef_execute_process(const struct _cef_main_args_t* args,
+     struct _cef_app_t* application, void* windows_sandbox_info) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -278,21 +342,122 @@
+       osModalLoop?true:false);
+ }
+ 
+-CEF_EXPORT int cef_get_geolocation(
+-    struct _cef_get_geolocation_callback_t* callback) {
++CEF_EXPORT void cef_visit_web_plugin_info(
++    struct _cef_web_plugin_info_visitor_t* visitor) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
++  // Verify param: visitor; type: refptr_diff
++  DCHECK(visitor);
++  if (!visitor)
++    return;
++
++  // Execute
++  CefVisitWebPluginInfo(
++      CefWebPluginInfoVisitorCToCpp::Wrap(visitor));
++}
++
++CEF_EXPORT void cef_refresh_web_plugins() {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Execute
++  CefRefreshWebPlugins();
++}
++
++CEF_EXPORT void cef_add_web_plugin_path(const cef_string_t* path) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(path);
++  if (!path)
++    return;
++
++  // Execute
++  CefAddWebPluginPath(
++      CefString(path));
++}
++
++CEF_EXPORT void cef_add_web_plugin_directory(const cef_string_t* dir) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: dir; type: string_byref_const
++  DCHECK(dir);
++  if (!dir)
++    return;
++
++  // Execute
++  CefAddWebPluginDirectory(
++      CefString(dir));
++}
++
++CEF_EXPORT void cef_remove_web_plugin_path(const cef_string_t* path) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(path);
++  if (!path)
++    return;
++
++  // Execute
++  CefRemoveWebPluginPath(
++      CefString(path));
++}
++
++CEF_EXPORT void cef_unregister_internal_web_plugin(const cef_string_t* path) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(path);
++  if (!path)
++    return;
++
++  // Execute
++  CefUnregisterInternalWebPlugin(
++      CefString(path));
++}
++
++CEF_EXPORT void cef_force_web_plugin_shutdown(const cef_string_t* path) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(path);
++  if (!path)
++    return;
++
++  // Execute
++  CefForceWebPluginShutdown(
++      CefString(path));
++}
++
++CEF_EXPORT void cef_register_web_plugin_crash(const cef_string_t* path) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(path);
++  if (!path)
++    return;
++
++  // Execute
++  CefRegisterWebPluginCrash(
++      CefString(path));
++}
++
++CEF_EXPORT void cef_is_web_plugin_unstable(const cef_string_t* path,
++    struct _cef_web_plugin_unstable_callback_t* callback) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(path);
++  if (!path)
++    return;
+   // Verify param: callback; type: refptr_diff
+   DCHECK(callback);
+   if (!callback)
+-    return 0;
++    return;
+ 
+   // Execute
+-  bool _retval = CefGetGeolocation(
+-      CefGetGeolocationCallbackCToCpp::Wrap(callback));
+-
+-  // Return type: bool
+-  return _retval;
++  CefIsWebPluginUnstable(
++      CefString(path),
++      CefWebPluginUnstableCallbackCToCpp::Wrap(callback));
+ }
+ 
+ CEF_EXPORT int cef_add_cross_origin_whitelist_entry(
+@@ -357,73 +522,44 @@
+   return _retval;
+ }
+ 
+-CEF_EXPORT int cef_get_path(cef_path_key_t key, cef_string_t* path) {
++CEF_EXPORT int cef_begin_tracing(const cef_string_t* categories) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+-  // Verify param: path; type: string_byref
+-  DCHECK(path);
+-  if (!path)
+-    return 0;
++  // Unverified params: categories
+ 
+-  // Translate param: path; type: string_byref
+-  CefString pathStr(path);
+-
+   // Execute
+-  bool _retval = CefGetPath(
+-      key,
+-      pathStr);
++  bool _retval = CefBeginTracing(
++      CefString(categories));
+ 
+   // Return type: bool
+   return _retval;
+ }
+ 
+-CEF_EXPORT int cef_launch_process(struct _cef_command_line_t* command_line) {
++CEF_EXPORT int cef_end_tracing_async(const cef_string_t* tracing_file,
++    struct _cef_end_tracing_callback_t* callback) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+-  // Verify param: command_line; type: refptr_same
+-  DCHECK(command_line);
+-  if (!command_line)
+-    return 0;
++  // Unverified params: tracing_file, callback
+ 
+   // Execute
+-  bool _retval = CefLaunchProcess(
+-      CefCommandLineCppToC::Unwrap(command_line));
++  bool _retval = CefEndTracingAsync(
++      CefString(tracing_file),
++      CefEndTracingCallbackCToCpp::Wrap(callback));
+ 
+   // Return type: bool
+   return _retval;
+ }
+ 
+-CEF_EXPORT int cef_register_scheme_handler_factory(
+-    const cef_string_t* scheme_name, const cef_string_t* domain_name,
+-    struct _cef_scheme_handler_factory_t* factory) {
++CEF_EXPORT int64 cef_now_from_system_trace_time() {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+-  // Verify param: scheme_name; type: string_byref_const
+-  DCHECK(scheme_name);
+-  if (!scheme_name)
+-    return 0;
+-  // Unverified params: domain_name, factory
+-
+   // Execute
+-  bool _retval = CefRegisterSchemeHandlerFactory(
+-      CefString(scheme_name),
+-      CefString(domain_name),
+-      CefSchemeHandlerFactoryCToCpp::Wrap(factory));
++  int64 _retval = CefNowFromSystemTraceTime();
+ 
+-  // Return type: bool
++  // Return type: simple
+   return _retval;
+ }
+ 
+-CEF_EXPORT int cef_clear_scheme_handler_factories() {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Execute
+-  bool _retval = CefClearSchemeHandlerFactories();
+-
+-  // Return type: bool
+-  return _retval;
+-}
+-
+ CEF_EXPORT int cef_currently_on(cef_thread_id_t threadId) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -472,44 +608,50 @@
+   return _retval;
+ }
+ 
+-CEF_EXPORT int cef_begin_tracing(const cef_string_t* categories) {
++CEF_EXPORT int cef_register_extension(const cef_string_t* extension_name,
++    const cef_string_t* javascript_code, struct _cef_v8handler_t* handler) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+-  // Unverified params: categories
++  // Verify param: extension_name; type: string_byref_const
++  DCHECK(extension_name);
++  if (!extension_name)
++    return 0;
++  // Verify param: javascript_code; type: string_byref_const
++  DCHECK(javascript_code);
++  if (!javascript_code)
++    return 0;
++  // Unverified params: handler
+ 
+   // Execute
+-  bool _retval = CefBeginTracing(
+-      CefString(categories));
++  bool _retval = CefRegisterExtension(
++      CefString(extension_name),
++      CefString(javascript_code),
++      CefV8HandlerCToCpp::Wrap(handler));
+ 
+   // Return type: bool
+   return _retval;
+ }
+ 
+-CEF_EXPORT int cef_end_tracing_async(const cef_string_t* tracing_file,
+-    struct _cef_end_tracing_callback_t* callback) {
++CEF_EXPORT int cef_get_path(cef_path_key_t key, cef_string_t* path) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+-  // Unverified params: tracing_file, callback
++  // Verify param: path; type: string_byref
++  DCHECK(path);
++  if (!path)
++    return 0;
+ 
++  // Translate param: path; type: string_byref
++  CefString pathStr(path);
++
+   // Execute
+-  bool _retval = CefEndTracingAsync(
+-      CefString(tracing_file),
+-      CefEndTracingCallbackCToCpp::Wrap(callback));
++  bool _retval = CefGetPath(
++      key,
++      pathStr);
+ 
+   // Return type: bool
+   return _retval;
+ }
+ 
+-CEF_EXPORT int64 cef_now_from_system_trace_time() {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Execute
+-  int64 _retval = CefNowFromSystemTraceTime();
+-
+-  // Return type: simple
+-  return _retval;
+-}
+-
+ CEF_EXPORT int cef_parse_url(const cef_string_t* url,
+     struct _cef_urlparts_t* parts) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+@@ -587,145 +729,3 @@
+   return _retval.DetachToUserFree();
+ }
+ 
+-CEF_EXPORT int cef_register_extension(const cef_string_t* extension_name,
+-    const cef_string_t* javascript_code, struct _cef_v8handler_t* handler) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: extension_name; type: string_byref_const
+-  DCHECK(extension_name);
+-  if (!extension_name)
+-    return 0;
+-  // Verify param: javascript_code; type: string_byref_const
+-  DCHECK(javascript_code);
+-  if (!javascript_code)
+-    return 0;
+-  // Unverified params: handler
+-
+-  // Execute
+-  bool _retval = CefRegisterExtension(
+-      CefString(extension_name),
+-      CefString(javascript_code),
+-      CefV8HandlerCToCpp::Wrap(handler));
+-
+-  // Return type: bool
+-  return _retval;
+-}
+-
+-CEF_EXPORT void cef_visit_web_plugin_info(
+-    struct _cef_web_plugin_info_visitor_t* visitor) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: visitor; type: refptr_diff
+-  DCHECK(visitor);
+-  if (!visitor)
+-    return;
+-
+-  // Execute
+-  CefVisitWebPluginInfo(
+-      CefWebPluginInfoVisitorCToCpp::Wrap(visitor));
+-}
+-
+-CEF_EXPORT void cef_refresh_web_plugins() {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Execute
+-  CefRefreshWebPlugins();
+-}
+-
+-CEF_EXPORT void cef_add_web_plugin_path(const cef_string_t* path) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(path);
+-  if (!path)
+-    return;
+-
+-  // Execute
+-  CefAddWebPluginPath(
+-      CefString(path));
+-}
+-
+-CEF_EXPORT void cef_add_web_plugin_directory(const cef_string_t* dir) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: dir; type: string_byref_const
+-  DCHECK(dir);
+-  if (!dir)
+-    return;
+-
+-  // Execute
+-  CefAddWebPluginDirectory(
+-      CefString(dir));
+-}
+-
+-CEF_EXPORT void cef_remove_web_plugin_path(const cef_string_t* path) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(path);
+-  if (!path)
+-    return;
+-
+-  // Execute
+-  CefRemoveWebPluginPath(
+-      CefString(path));
+-}
+-
+-CEF_EXPORT void cef_unregister_internal_web_plugin(const cef_string_t* path) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(path);
+-  if (!path)
+-    return;
+-
+-  // Execute
+-  CefUnregisterInternalWebPlugin(
+-      CefString(path));
+-}
+-
+-CEF_EXPORT void cef_force_web_plugin_shutdown(const cef_string_t* path) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(path);
+-  if (!path)
+-    return;
+-
+-  // Execute
+-  CefForceWebPluginShutdown(
+-      CefString(path));
+-}
+-
+-CEF_EXPORT void cef_register_web_plugin_crash(const cef_string_t* path) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(path);
+-  if (!path)
+-    return;
+-
+-  // Execute
+-  CefRegisterWebPluginCrash(
+-      CefString(path));
+-}
+-
+-CEF_EXPORT void cef_is_web_plugin_unstable(const cef_string_t* path,
+-    struct _cef_web_plugin_unstable_callback_t* callback) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(path);
+-  if (!path)
+-    return;
+-  // Verify param: callback; type: refptr_diff
+-  DCHECK(callback);
+-  if (!callback)
+-    return;
+-
+-  // Execute
+-  CefIsWebPluginUnstable(
+-      CefString(path),
+-      CefWebPluginUnstableCallbackCToCpp::Wrap(callback));
+-}
+-
+Index: libcef_dll/wrapper/libcef_dll_wrapper.cc
+===================================================================
+--- libcef_dll/wrapper/libcef_dll_wrapper.cc	(revision 1640)
++++ libcef_dll/wrapper/libcef_dll_wrapper.cc	(working copy)
+@@ -10,28 +10,28 @@
+ // for more information.
+ //
+ 
++#include "include/cef_scheme.h"
++#include "include/capi/cef_scheme_capi.h"
++#include "include/cef_process_util.h"
++#include "include/capi/cef_process_util_capi.h"
++#include "include/cef_geolocation.h"
++#include "include/capi/cef_geolocation_capi.h"
+ #include "include/cef_app.h"
+ #include "include/capi/cef_app_capi.h"
+-#include "include/cef_geolocation.h"
+-#include "include/capi/cef_geolocation_capi.h"
++#include "include/cef_web_plugin.h"
++#include "include/capi/cef_web_plugin_capi.h"
+ #include "include/cef_origin_whitelist.h"
+ #include "include/capi/cef_origin_whitelist_capi.h"
++#include "include/cef_trace.h"
++#include "include/capi/cef_trace_capi.h"
++#include "include/cef_task.h"
++#include "include/capi/cef_task_capi.h"
++#include "include/cef_v8.h"
++#include "include/capi/cef_v8_capi.h"
+ #include "include/cef_path_util.h"
+ #include "include/capi/cef_path_util_capi.h"
+-#include "include/cef_process_util.h"
+-#include "include/capi/cef_process_util_capi.h"
+-#include "include/cef_scheme.h"
+-#include "include/capi/cef_scheme_capi.h"
+-#include "include/cef_task.h"
+-#include "include/capi/cef_task_capi.h"
+-#include "include/cef_trace.h"
+-#include "include/capi/cef_trace_capi.h"
+ #include "include/cef_url.h"
+ #include "include/capi/cef_url_capi.h"
+-#include "include/cef_v8.h"
+-#include "include/capi/cef_v8_capi.h"
+-#include "include/cef_web_plugin.h"
+-#include "include/capi/cef_web_plugin_capi.h"
+ #include "include/cef_version.h"
+ #include "libcef_dll/cpptoc/app_cpptoc.h"
+ #include "libcef_dll/cpptoc/browser_process_handler_cpptoc.h"
+@@ -112,6 +112,70 @@
+ 
+ // GLOBAL METHODS - Body may be edited by hand.
+ 
++CEF_GLOBAL bool CefRegisterSchemeHandlerFactory(const CefString& scheme_name,
++    const CefString& domain_name,
++    CefRefPtr<CefSchemeHandlerFactory> factory) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: scheme_name; type: string_byref_const
++  DCHECK(!scheme_name.empty());
++  if (scheme_name.empty())
++    return false;
++  // Unverified params: domain_name, factory
++
++  // Execute
++  int _retval = cef_register_scheme_handler_factory(
++      scheme_name.GetStruct(),
++      domain_name.GetStruct(),
++      CefSchemeHandlerFactoryCppToC::Wrap(factory));
++
++  // Return type: bool
++  return _retval?true:false;
++}
++
++CEF_GLOBAL bool CefClearSchemeHandlerFactories() {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Execute
++  int _retval = cef_clear_scheme_handler_factories();
++
++  // Return type: bool
++  return _retval?true:false;
++}
++
++CEF_GLOBAL bool CefLaunchProcess(CefRefPtr<CefCommandLine> command_line) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: command_line; type: refptr_same
++  DCHECK(command_line.get());
++  if (!command_line.get())
++    return false;
++
++  // Execute
++  int _retval = cef_launch_process(
++      CefCommandLineCToCpp::Unwrap(command_line));
++
++  // Return type: bool
++  return _retval?true:false;
++}
++
++CEF_GLOBAL bool CefGetGeolocation(
++    CefRefPtr<CefGetGeolocationCallback> callback) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: callback; type: refptr_diff
++  DCHECK(callback.get());
++  if (!callback.get())
++    return false;
++
++  // Execute
++  int _retval = cef_get_geolocation(
++      CefGetGeolocationCallbackCppToC::Wrap(callback));
++
++  // Return type: bool
++  return _retval?true:false;
++}
++
+ CEF_GLOBAL int CefExecuteProcess(const CefMainArgs& args,
+     CefRefPtr<CefApp> application, void* windows_sandbox_info) {
+   const char* api_hash = cef_api_hash(0);
+@@ -270,21 +334,122 @@
+       osModalLoop);
+ }
+ 
+-CEF_GLOBAL bool CefGetGeolocation(
+-    CefRefPtr<CefGetGeolocationCallback> callback) {
++CEF_GLOBAL void CefVisitWebPluginInfo(
++    CefRefPtr<CefWebPluginInfoVisitor> visitor) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
++  // Verify param: visitor; type: refptr_diff
++  DCHECK(visitor.get());
++  if (!visitor.get())
++    return;
++
++  // Execute
++  cef_visit_web_plugin_info(
++      CefWebPluginInfoVisitorCppToC::Wrap(visitor));
++}
++
++CEF_GLOBAL void CefRefreshWebPlugins() {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Execute
++  cef_refresh_web_plugins();
++}
++
++CEF_GLOBAL void CefAddWebPluginPath(const CefString& path) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(!path.empty());
++  if (path.empty())
++    return;
++
++  // Execute
++  cef_add_web_plugin_path(
++      path.GetStruct());
++}
++
++CEF_GLOBAL void CefAddWebPluginDirectory(const CefString& dir) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: dir; type: string_byref_const
++  DCHECK(!dir.empty());
++  if (dir.empty())
++    return;
++
++  // Execute
++  cef_add_web_plugin_directory(
++      dir.GetStruct());
++}
++
++CEF_GLOBAL void CefRemoveWebPluginPath(const CefString& path) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(!path.empty());
++  if (path.empty())
++    return;
++
++  // Execute
++  cef_remove_web_plugin_path(
++      path.GetStruct());
++}
++
++CEF_GLOBAL void CefUnregisterInternalWebPlugin(const CefString& path) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(!path.empty());
++  if (path.empty())
++    return;
++
++  // Execute
++  cef_unregister_internal_web_plugin(
++      path.GetStruct());
++}
++
++CEF_GLOBAL void CefForceWebPluginShutdown(const CefString& path) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(!path.empty());
++  if (path.empty())
++    return;
++
++  // Execute
++  cef_force_web_plugin_shutdown(
++      path.GetStruct());
++}
++
++CEF_GLOBAL void CefRegisterWebPluginCrash(const CefString& path) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(!path.empty());
++  if (path.empty())
++    return;
++
++  // Execute
++  cef_register_web_plugin_crash(
++      path.GetStruct());
++}
++
++CEF_GLOBAL void CefIsWebPluginUnstable(const CefString& path,
++    CefRefPtr<CefWebPluginUnstableCallback> callback) {
++  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
++
++  // Verify param: path; type: string_byref_const
++  DCHECK(!path.empty());
++  if (path.empty())
++    return;
+   // Verify param: callback; type: refptr_diff
+   DCHECK(callback.get());
+   if (!callback.get())
+-    return false;
++    return;
+ 
+   // Execute
+-  int _retval = cef_get_geolocation(
+-      CefGetGeolocationCallbackCppToC::Wrap(callback));
+-
+-  // Return type: bool
+-  return _retval?true:false;
++  cef_is_web_plugin_unstable(
++      path.GetStruct(),
++      CefWebPluginUnstableCallbackCppToC::Wrap(callback));
+ }
+ 
+ CEF_GLOBAL bool CefAddCrossOriginWhitelistEntry(const CefString& source_origin,
+@@ -349,63 +514,42 @@
+   return _retval?true:false;
+ }
+ 
+-CEF_GLOBAL bool CefGetPath(PathKey key, CefString& path) {
++CEF_GLOBAL bool CefBeginTracing(const CefString& categories) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+-  // Execute
+-  int _retval = cef_get_path(
+-      key,
+-      path.GetWritableStruct());
++  // Unverified params: categories
+ 
+-  // Return type: bool
+-  return _retval?true:false;
+-}
+-
+-CEF_GLOBAL bool CefLaunchProcess(CefRefPtr<CefCommandLine> command_line) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: command_line; type: refptr_same
+-  DCHECK(command_line.get());
+-  if (!command_line.get())
+-    return false;
+-
+   // Execute
+-  int _retval = cef_launch_process(
+-      CefCommandLineCToCpp::Unwrap(command_line));
++  int _retval = cef_begin_tracing(
++      categories.GetStruct());
+ 
+   // Return type: bool
+   return _retval?true:false;
+ }
+ 
+-CEF_GLOBAL bool CefRegisterSchemeHandlerFactory(const CefString& scheme_name,
+-    const CefString& domain_name,
+-    CefRefPtr<CefSchemeHandlerFactory> factory) {
++CEF_GLOBAL bool CefEndTracingAsync(const CefString& tracing_file,
++    CefRefPtr<CefEndTracingCallback> callback) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+-  // Verify param: scheme_name; type: string_byref_const
+-  DCHECK(!scheme_name.empty());
+-  if (scheme_name.empty())
+-    return false;
+-  // Unverified params: domain_name, factory
++  // Unverified params: tracing_file, callback
+ 
+   // Execute
+-  int _retval = cef_register_scheme_handler_factory(
+-      scheme_name.GetStruct(),
+-      domain_name.GetStruct(),
+-      CefSchemeHandlerFactoryCppToC::Wrap(factory));
++  int _retval = cef_end_tracing_async(
++      tracing_file.GetStruct(),
++      CefEndTracingCallbackCppToC::Wrap(callback));
+ 
+   // Return type: bool
+   return _retval?true:false;
+ }
+ 
+-CEF_GLOBAL bool CefClearSchemeHandlerFactories() {
++CEF_GLOBAL int64 CefNowFromSystemTraceTime() {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+   // Execute
+-  int _retval = cef_clear_scheme_handler_factories();
++  int64 _retval = cef_now_from_system_trace_time();
+ 
+-  // Return type: bool
+-  return _retval?true:false;
++  // Return type: simple
++  return _retval;
+ }
+ 
+ CEF_GLOBAL bool CefCurrentlyOn(CefThreadId threadId) {
+@@ -455,44 +599,42 @@
+   return _retval?true:false;
+ }
+ 
+-CEF_GLOBAL bool CefBeginTracing(const CefString& categories) {
++CEF_GLOBAL bool CefRegisterExtension(const CefString& extension_name,
++    const CefString& javascript_code, CefRefPtr<CefV8Handler> handler) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+-  // Unverified params: categories
++  // Verify param: extension_name; type: string_byref_const
++  DCHECK(!extension_name.empty());
++  if (extension_name.empty())
++    return false;
++  // Verify param: javascript_code; type: string_byref_const
++  DCHECK(!javascript_code.empty());
++  if (javascript_code.empty())
++    return false;
++  // Unverified params: handler
+ 
+   // Execute
+-  int _retval = cef_begin_tracing(
+-      categories.GetStruct());
++  int _retval = cef_register_extension(
++      extension_name.GetStruct(),
++      javascript_code.GetStruct(),
++      CefV8HandlerCppToC::Wrap(handler));
+ 
+   // Return type: bool
+   return _retval?true:false;
+ }
+ 
+-CEF_GLOBAL bool CefEndTracingAsync(const CefString& tracing_file,
+-    CefRefPtr<CefEndTracingCallback> callback) {
++CEF_GLOBAL bool CefGetPath(PathKey key, CefString& path) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+-  // Unverified params: tracing_file, callback
+-
+   // Execute
+-  int _retval = cef_end_tracing_async(
+-      tracing_file.GetStruct(),
+-      CefEndTracingCallbackCppToC::Wrap(callback));
++  int _retval = cef_get_path(
++      key,
++      path.GetWritableStruct());
+ 
+   // Return type: bool
+   return _retval?true:false;
+ }
+ 
+-CEF_GLOBAL int64 CefNowFromSystemTraceTime() {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Execute
+-  int64 _retval = cef_now_from_system_trace_time();
+-
+-  // Return type: simple
+-  return _retval;
+-}
+-
+ CEF_GLOBAL bool CefParseURL(const CefString& url, CefURLParts& parts) {
+   // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+ 
+@@ -540,145 +682,3 @@
+   return _retvalStr;
+ }
+ 
+-CEF_GLOBAL bool CefRegisterExtension(const CefString& extension_name,
+-    const CefString& javascript_code, CefRefPtr<CefV8Handler> handler) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: extension_name; type: string_byref_const
+-  DCHECK(!extension_name.empty());
+-  if (extension_name.empty())
+-    return false;
+-  // Verify param: javascript_code; type: string_byref_const
+-  DCHECK(!javascript_code.empty());
+-  if (javascript_code.empty())
+-    return false;
+-  // Unverified params: handler
+-
+-  // Execute
+-  int _retval = cef_register_extension(
+-      extension_name.GetStruct(),
+-      javascript_code.GetStruct(),
+-      CefV8HandlerCppToC::Wrap(handler));
+-
+-  // Return type: bool
+-  return _retval?true:false;
+-}
+-
+-CEF_GLOBAL void CefVisitWebPluginInfo(
+-    CefRefPtr<CefWebPluginInfoVisitor> visitor) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: visitor; type: refptr_diff
+-  DCHECK(visitor.get());
+-  if (!visitor.get())
+-    return;
+-
+-  // Execute
+-  cef_visit_web_plugin_info(
+-      CefWebPluginInfoVisitorCppToC::Wrap(visitor));
+-}
+-
+-CEF_GLOBAL void CefRefreshWebPlugins() {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Execute
+-  cef_refresh_web_plugins();
+-}
+-
+-CEF_GLOBAL void CefAddWebPluginPath(const CefString& path) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(!path.empty());
+-  if (path.empty())
+-    return;
+-
+-  // Execute
+-  cef_add_web_plugin_path(
+-      path.GetStruct());
+-}
+-
+-CEF_GLOBAL void CefAddWebPluginDirectory(const CefString& dir) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: dir; type: string_byref_const
+-  DCHECK(!dir.empty());
+-  if (dir.empty())
+-    return;
+-
+-  // Execute
+-  cef_add_web_plugin_directory(
+-      dir.GetStruct());
+-}
+-
+-CEF_GLOBAL void CefRemoveWebPluginPath(const CefString& path) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(!path.empty());
+-  if (path.empty())
+-    return;
+-
+-  // Execute
+-  cef_remove_web_plugin_path(
+-      path.GetStruct());
+-}
+-
+-CEF_GLOBAL void CefUnregisterInternalWebPlugin(const CefString& path) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(!path.empty());
+-  if (path.empty())
+-    return;
+-
+-  // Execute
+-  cef_unregister_internal_web_plugin(
+-      path.GetStruct());
+-}
+-
+-CEF_GLOBAL void CefForceWebPluginShutdown(const CefString& path) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(!path.empty());
+-  if (path.empty())
+-    return;
+-
+-  // Execute
+-  cef_force_web_plugin_shutdown(
+-      path.GetStruct());
+-}
+-
+-CEF_GLOBAL void CefRegisterWebPluginCrash(const CefString& path) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(!path.empty());
+-  if (path.empty())
+-    return;
+-
+-  // Execute
+-  cef_register_web_plugin_crash(
+-      path.GetStruct());
+-}
+-
+-CEF_GLOBAL void CefIsWebPluginUnstable(const CefString& path,
+-    CefRefPtr<CefWebPluginUnstableCallback> callback) {
+-  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+-
+-  // Verify param: path; type: string_byref_const
+-  DCHECK(!path.empty());
+-  if (path.empty())
+-    return;
+-  // Verify param: callback; type: refptr_diff
+-  DCHECK(callback.get());
+-  if (!callback.get())
+-    return;
+-
+-  // Execute
+-  cef_is_web_plugin_unstable(
+-      path.GetStruct(),
+-      CefWebPluginUnstableCallbackCppToC::Wrap(callback));
+-}
+-
