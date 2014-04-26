@@ -96,5 +96,17 @@ void render::OnPaint(
   }
 }
 
+bool client::OnProcessMessageReceived(
+  CefRefPtr<CefBrowser> browser,
+  CefProcessId source_proc_id,
+  CefRefPtr<CefProcessMessage> msg
+)
+{
+  if (msg->GetName() == "take_screenshot") {
+    LOG_INFO(log, "take_screenshot received");
+  }
+  return true;
+}
+
 }}
 
