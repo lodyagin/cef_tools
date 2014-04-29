@@ -7,6 +7,7 @@
  */
 
 //#include "RHolder.hpp"
+#include "screenshotter.h"
 #include "proc_browser.h"
 #include "browser.h"
 #include "task.h"
@@ -96,6 +97,24 @@ void render::OnPaint(
   }
 }
 
+void tmp_sceenshot(
+  int browser_id,
+  const CefRect& r,
+  const std::string& fname
+)
+{
+  png::image<png::rgba_pixel> img(r.width, r.height);
+  (img << 
+#if 1
+     shared::browser_repository::instance()
+      . get_object_by_id(browser_id)
+#else
+     RHolder<shared::browser>(id.browser_id)
+#endif
+     -> vbuf . get_area(r.x, r.y, r.width, r.height)
+  ).write(fname);
+}
+
 bool client::OnProcessMessageReceived(
   CefRefPtr<CefBrowser> browser,
   CefProcessId source_proc_id,
@@ -103,7 +122,17 @@ bool client::OnProcessMessageReceived(
 )
 {
   if (msg->GetName() == "take_screenshot") {
-    LOG_INFO(log, "take_screenshot received");
+    LOG_DEBUG(log, "take_screenshot received");
+    auto args = msg->GetArgumentList();
+    CefRect r(
+      args->GetInt(1), args->GetInt(2),
+      args->GetInt(3), args->GetInt(4)
+    );
+    tmp_sceenshot(
+      args->GetInt(0), 
+      r, 
+      args->GetString(5).ToString()
+    );
   }
   return true;
 }

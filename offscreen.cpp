@@ -38,6 +38,7 @@ class load : public CefLoadHandler
 public:
   void OnLoadStart(CefRefPtr<CefBrowser> br,
                    CefRefPtr<CefFrame> fr) override;
+
 private:
   IMPLEMENT_REFCOUNTING(load);
 };

@@ -9,7 +9,8 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
-#include "include/wrapper/cef_message_router.h"
+//#include "include/wrapper/cef_message_router.h"
+#include "include/cef_task.h"
 #include "RThread.hpp"
 #include "SCommon.h"
 #include "types/time.h"
@@ -54,7 +55,7 @@ void node_obj::take_screenshot(
   {
     CefRefPtr<CefProcessMessage> msg =
       CefProcessMessage::Create("take_screenshot");
-#if 0
+#if 1
     LOG_TRACE(log, "1");
     msg->GetArgumentList()->SetInt(0, id.browser_id);
     LOG_TRACE(log, "2");
@@ -78,20 +79,27 @@ void node_obj::take_screenshot(
       -> SendProcessMessage(PID_BROWSER, msg);
   }
   LOG_DEBUG(log, "msg is sent");
-
-#if 0
-  png::image<png::rgba_pixel> img(r.width, r.height);
-  (img << 
-#if 1
-     shared::browser_repository::instance()
-      . get_object_by_id(id.browser_id)
-#else
-     RHolder<shared::browser>(id.browser_id)
-#endif
-     -> vbuf . get_area(r.x, r.y, r.width, r.height)
-  ).write(png_name);
-#endif
 }
+
+// TODO make a function wrapper like CefRunnableMethod
+// but without Cef ref counting (is it possible?)
+class tmp_task : public CefTask
+{
+public:
+  tmp_task(node_obj& obj_) : obj(obj_) {}
+
+  void Execute() override
+  {
+    std::cout << "test_task::Execute()" << std::endl;
+    obj.take_screenshot("test_task", true);
+  }
+
+protected:
+  node_obj& obj;
+
+private:
+  IMPLEMENT_REFCOUNTING(test_task);
+};
 
 void node_obj::take_screenshot_delayed(
   const std::string& fname,
@@ -100,12 +108,13 @@ void node_obj::take_screenshot_delayed(
 )
 {
   LOG_TRACE(log, "take_screenshot_delayed()");
-  StdThread::create<LightThread>(
-  [this, fname, delay, prepend_timestamp]()
-  {
-    std::this_thread::sleep_for(delay);
-    take_screenshot(fname, prepend_timestamp);
-  })->start();
+
+  CefPostDelayedTask(
+    TID_RENDERER, 
+    new tmp_task(*this),
+    std::chrono::duration_cast<std::chrono::milliseconds>
+      (delay).count()
+  );
 }
 
 } // renderer

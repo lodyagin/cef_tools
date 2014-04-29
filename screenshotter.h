@@ -13,7 +13,7 @@
 #include <png++/png.hpp>
 #include "include/cef_base.h"
 
-namespace renderer {
+//namespace renderer {
 
 //! Save 2d BGRA point array to png::image
 template<class point, class pixel>
@@ -35,6 +35,6 @@ operator<< (
   return img;
 }
 
-}
+//}
 
 #endif
