@@ -12,6 +12,7 @@
 #include "include/cef_client.h"
 #include "include/cef_task.h"
 
+#include "RHolder.hpp"
 #include "Logging.h"
 #include "RThread.h"
 
@@ -152,14 +153,15 @@ void load::OnLoadStart
 
   struct Visitor : CefDOMVisitor
   {
-    Visitor(shared::browser* br) : the_browser(br) 
-    {
-      SCHECK(br);
-    }
+    Visitor(RHolder<shared::browser>&& br) 
+      : the_browser(std::move(br))
+    {}
 
     struct Listener : CefDOMEventListener
     {
-      Listener(shared::browser* br) : the_browser(br) {}
+      Listener(RHolder<shared::browser>&& br) 
+        : the_browser(std::move(br)) 
+      {}
 
       void HandleEvent(CefRefPtr<CefDOMEvent> ev) override
       {
@@ -172,13 +174,15 @@ void load::OnLoadStart
           << std::endl;
         );
         // FIXME ensure the_browser is not destroyed yet
-        compare_and_move(
-          *the_browser, 
+        compare_and_move
+        (
+          the_browser, 
           shared::browser::createdState,
-          shared::browser::dom_readyState);
+          shared::browser::dom_readyState
+        );
       }
 
-      shared::browser* the_browser;
+      RHolder<shared::browser> the_browser;
       IMPLEMENT_REFCOUNTING(Listener);
       typedef Logger<Listener> log;
     };
@@ -186,26 +190,33 @@ void load::OnLoadStart
     void Visit(CefRefPtr<CefDOMDocument> d) override
     {
       if (auto root_node = d->GetDocument()) {
-        root_node->AddEventListener
-          (L"DOMContentLoaded", new Listener(the_browser), true);
+        root_node->AddEventListener(
+          L"DOMContentLoaded", 
+          new Listener(std::move(the_browser)), 
+          true
+        );
       }
       else assert(false);
     }
 
-    shared::browser* the_browser;
+    RHolder<shared::browser> the_browser;
 
     IMPLEMENT_REFCOUNTING(Visitor);
   };
 
   REQUIRE_RENDERER_THREAD(); // for VisitDOM
+try {
   if (fr->IsMain()) {
     fr->VisitDOM(
       new Visitor(
-        shared::browser_repository::instance()
-          . get_object_by_id(br->GetIdentifier())
+        RHolder<shared::browser>(br->GetIdentifier())
       )
     );
   }
+}
+catch(...) {
+  std::cout << "Exception!" << std::endl;
+}
 }
 
 void renderer::OnBrowserCreated(CefRefPtr<CefBrowser> br)

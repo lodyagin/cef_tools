@@ -6,7 +6,7 @@
  * @author Sergei Lodyagin
  */
 
-//#include "RHolder.hpp"
+#include "RHolder.hpp"
 #include "screenshotter.h"
 #include "proc_browser.h"
 #include "browser.h"
@@ -71,17 +71,7 @@ void render::OnPaint(
   int h
 )
 {
-#if 1
-  shared::browser* br = nullptr;
-  try {
-    br = shared::browser_repository::instance()
-      . get_object_by_id(browser->GetIdentifier());
-  }
-  catch(const std::out_of_range&) {}
-#else
   RHolder<shared::browser> br(browser->GetIdentifier());
-#endif
-
   for (auto r : dirtyRects)
   {
       LOG_TRACE(log, 
@@ -104,14 +94,9 @@ void tmp_sceenshot(
 )
 {
   png::image<png::rgba_pixel> img(r.width, r.height);
-  (img << 
-#if 1
-     shared::browser_repository::instance()
-      . get_object_by_id(browser_id)
-#else
-     RHolder<shared::browser>(id.browser_id)
-#endif
-     -> vbuf . get_area(r.x, r.y, r.width, r.height)
+  (img 
+    << RHolder<shared::browser>(browser_id)
+       -> vbuf . get_area(r.x, r.y, r.width, r.height)
   ).write(fname);
 }
 

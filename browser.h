@@ -21,6 +21,7 @@
 
 #include "AutoRepository.hpp"
 #include "REvent.h"
+#include "Guard.h"
 #include "RMutex.h"
 
 namespace shared {
@@ -69,6 +70,9 @@ class browser
   DECLARE_EVENT(BrowserAxis, dom_ready);
 
 public:
+
+  template<class T, int w>
+  using guard_templ = curr::NoGuard<T, w>;
 
   //! @cond
   DECLARE_STATES(BrowserAxis, State);
@@ -154,39 +158,8 @@ private:
 std::ostream& 
 operator<<(std::ostream& out, const browser& br);
 
-#if 0
-class browser_repository final
-  : public curr::SAutoSingleton<browser_repository>,
-    public curr::Repository
-      <browser, browser::Par, std::map, int>
-{
-  using Parent = curr::Repository
-    <browser, browser::Par, std::map, int>;
-
-public:
-  browser_repository();
-
-  browser* create_object(const browser::Par& p) override;
-
-  // Return the browser object by CefBrowser ptr
-  browser* get_object_by_cefbrowser
-    (const CefBrowser* br) const
-  {
-    RLOCK(this->objectsM);
-    return cefindex.at(br);
-  }
-
-protected:
-  typedef std::map<const CefBrowser*, browser*> cefindex_t;
-  cefindex_t cefindex;
-
-private:
-  typedef curr::Logger<browser_repository> log;
-};
-#else
 using browser_repository =
   curr::AutoRepository<browser, int>;
-#endif
 
 }
 

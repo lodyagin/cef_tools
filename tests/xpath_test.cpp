@@ -8,6 +8,7 @@
 #include "include/cef_task.h"
 #include "Logging.h"
 #include "Event.h"
+#include "RHolder.hpp"
 #include "xpath.h"
 #include "dom.h"
 #include "offscreen.h"
@@ -45,8 +46,7 @@ private:
 
 void test_dom(const fun_t& fun)
 {
-  shared::browser_repository::instance()
-    . get_object_by_id(browser_id) -> br
+  RHolder<shared::browser>(browser_id) -> br
     -> GetMainFrame() -> VisitDOM(new DOMVisitor(fun));
 }
 
@@ -592,9 +592,7 @@ int main(int argc, char* argv[])
     {
       CURR_WAIT_L(
         Logger<LOG::Root>::logger(),
-        shared::browser_repository::instance()
-          . get_object_by_id(1)
-          -> is_dom_ready(),
+        RHolder<shared::browser>(1) -> is_dom_ready(),
         60001
       );
 

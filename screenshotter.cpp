@@ -55,7 +55,7 @@ void node_obj::take_screenshot(
   {
     CefRefPtr<CefProcessMessage> msg =
       CefProcessMessage::Create("take_screenshot");
-#if 1
+
     LOG_TRACE(log, "1");
     msg->GetArgumentList()->SetInt(0, id.browser_id);
     LOG_TRACE(log, "2");
@@ -72,9 +72,8 @@ void node_obj::take_screenshot(
       CefString(png_name)
     );
     LOG_TRACE(log, "7");
-#endif
-     shared::browser_repository::instance()
-      . get_object_by_id(id.browser_id)
+
+    RHolder<shared::browser>(id.browser_id)
       -> get_cef_browser() 
       -> SendProcessMessage(PID_BROWSER, msg);
   }

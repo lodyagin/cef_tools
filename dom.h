@@ -167,7 +167,7 @@ private:
 std::ostream&
 operator<<(std::ostream& out, const node_obj& nd);
 
-class node_ptr : public curr::RHolder<node_obj> {};
+//class node_ptr : public curr::RHolder<node_obj> {};
 
 } // renderer
 
@@ -429,10 +429,10 @@ public:
       new DOMVisitor<Query>
         (*this, browser_id, std::move(q));
 
-    shared::browser_repository::instance()
-      . get_object_by_id(browser_id) -> br
-      -> GetMainFrame() -> VisitDOM
-        (visitor); // takes ownership (ptr)
+    curr::RHolder<shared::browser>(browser_id) -> br
+      -> GetMainFrame() -> VisitDOM(visitor); 
+     // takes ownership (ptr)
+
     return dynamic_cast<DOMVisitor<Query>*>
       (visitor.get())->get_result_list();
   }

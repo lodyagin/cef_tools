@@ -8,6 +8,7 @@
 #include <iostream>
 #include <memory>
 #include "RThread.h"
+#include "RHolder.hpp"
 #include "offscreen.h"
 #include "browser.h"
 
@@ -46,9 +47,7 @@ int main(int argc, char* argv[])
     {
       CURR_WAIT_L(
         Logger<LOG::Root>::logger(),
-        shared::browser_repository::instance()
-          . get_object_by_id(1)
-          -> is_dom_ready(),
+        RHolder<shared::browser>(1)->is_dom_ready(),
         60001
       );
 
