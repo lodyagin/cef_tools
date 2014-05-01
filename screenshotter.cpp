@@ -9,7 +9,7 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
-//#include "include/wrapper/cef_message_router.h"
+#include <string>
 #include "include/cef_task.h"
 #include "RThread.hpp"
 #include "SCommon.h"
@@ -33,14 +33,43 @@ void node_obj::take_screenshot(
   using namespace std::chrono;
   using namespace curr::types;
 
-  static const auto time_format = "%y%m%d_%H%M%S";
+  static const char* time_format = "utc%y%m%d_%H%M%S";
 
   LOG_INFO(log, "Taking the screenshot");
   const CefRect& r = bounding_rect;
 
+#ifndef HAS_PUT_TIME
+  // GCC has no std::put_time
+  std::ostringstream s;
+  {
+    const std::tm tmp = 
+      curr::time::make_utc_tm(system_clock::now());
+    using iterator = std::ostreambuf_iterator<char>;
+    using time_put = std::time_put<char, iterator>;
+    const time_put& tp = 
+      std::use_facet<time_put>(s.getloc());
+    const iterator end = tp.put(
+      iterator(s.rdbuf()), 
+      s, 
+      s.fill(), 
+      &tmp,
+      time_format,
+      time_format 
+        + std::char_traits<char>::length(time_format)
+    );
+
+    if (end.failed())
+      s.setstate(std::ios_base::badbit);
+  }
+#endif
+
   string png_name = prepend_timestamp
     ? sformat(
+#ifdef HAS_PUT_TIME
         put_time(system_clock::now(), time_format),
+#else
+        s.str(),
+#endif
         '_', fname
       )
     : fname;
@@ -90,7 +119,7 @@ public:
   void Execute() override
   {
     std::cout << "test_task::Execute()" << std::endl;
-    obj.take_screenshot("test_task", true);
+    obj.take_screenshot("test_task.png", true);
   }
 
 protected:
