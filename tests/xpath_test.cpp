@@ -474,6 +474,34 @@ TEST(Xpath, XpathIterator)
       EXPECT_EQ(2, end - begin);
       EXPECT_EQ(2, ax1->xsize());
     }
+
+    // descendant axis
+    {
+      auto ax1 = html
+        -> descendant<::xpath::test::constant>(false);
+
+      const auto begin = ax1->begin();
+      const auto end = ax1->end();
+
+      EXPECT_EQ(0, begin.get_ovf());
+      EXPECT_EQ(1, end.get_ovf());
+//      EXPECT_EQ(-132, begin - end);
+//      EXPECT_EQ(132, end - begin);
+
+      const auto xbegin = ax1->xbegin();
+      const auto xend = ax1->xend();
+
+      EXPECT_TRUE(xbegin.is_empty());
+      EXPECT_TRUE(xend.is_empty());
+//      EXPECT_EQ(2, xbegin.get_ovf()); //debug test only
+//      EXPECT_EQ(2, xend.get_ovf());
+      EXPECT_TRUE(xbegin.ovf_equal(xend));
+      EXPECT_EQ(xbegin, xend);
+      EXPECT_EQ(0, xend - xbegin);
+      EXPECT_EQ(0, xbegin - xend);
+      EXPECT_EQ(0, ax1->xsize());
+    }
+
   });
 }
 
@@ -549,6 +577,76 @@ TEST(Xpath, NodeCreationInRepository)
 #endif
 
   EXPECT_EQ(10, node_repository::instance().size());
+}
+
+TEST(Xpath, FirstExprOfStepIsFalse)
+{
+  test_dom([](CefRefPtr<CefDOMNode> r)
+  {
+    using namespace std;
+    using namespace renderer::dom_visitor;
+    using namespace ::xpath::step;
+    using namespace ::xpath;
+    using node = renderer::dom_visitor::node;
+  
+    {
+    // single-checking query
+    auto qr = build_query
+      <axis::descendant, xpath::test::name>
+    (
+      "no-such-tag-name",
+      true
+    ).execute(renderer::dom_visitor::node(r));
+    auto bg = qr.begin();
+    auto nd = qr.end();
+//    EXPECT_EQ(2, bg.get_ovf()); // debug only
+//    EXPECT_EQ(2, nd.get_ovf());
+    EXPECT_TRUE(bg.is_empty());
+    EXPECT_TRUE(nd.is_empty());
+    EXPECT_TRUE(bg.ovf_equal(nd));
+    EXPECT_EQ(0, size<decltype(qr)::query_type>(qr));
+    EXPECT_EQ(bg.get_ovf(), nd.get_ovf());
+    }
+
+    {
+    // double-checkin query
+    auto qr = build_query<::xpath::test::fun>(
+      [](const node::generic_iterator& it)
+      {
+        return true;
+      },
+      build_query<axis::descendant, xpath::test::name>
+      (
+        "no-such-tag-name",
+        true
+      )
+    ).execute(renderer::dom_visitor::node(r));
+    auto bg = qr.begin();
+    auto nd = qr.end();
+    EXPECT_EQ(2, bg.get_ovf());
+    EXPECT_EQ(2, nd.get_ovf());
+    EXPECT_EQ(0, size<decltype(qr)::query_type>(qr));
+    }
+
+    {
+    auto qr = build_query<::xpath::test::fun>(
+      [](const node::generic_iterator& it)
+      {
+        return false;
+      },
+      build_query<axis::descendant, xpath::test::name>
+      (
+        "no-such-tag-name",
+        true
+      )
+    ).execute(renderer::dom_visitor::node(r));
+    auto bg = qr.begin();
+    auto nd = qr.end();
+//    EXPECT_EQ(2, bg.get_ovf());
+//    EXPECT_EQ(2, nd.get_ovf());
+    EXPECT_EQ(0, size<decltype(qr)::query_type>(qr));
+    }
+  });
 }
 
 std::atomic<int> test_result(13);

@@ -663,6 +663,11 @@ public:
     return context->IsSame(o.context);
   }
 
+  difference_type& get_ovf()
+  {
+    return ovf;
+  }
+
   difference_type get_ovf() const
   {
     return ovf;
@@ -1421,14 +1426,9 @@ operator-(
   const random_access_adapter<It>& b
 )
 {
-  // TODO specialized exceptions
-  SCHECK(!a.is_empty());
-  SCHECK(!b.is_empty());
-#if 0
-  SCHECK(a.context->IsSame(b.context));
-#else
+//  SCHECK(!a.is_empty());
+//  SCHECK(!b.is_empty());
   SCHECK(a.is_same_context(b));
-#endif
 
   typename It::difference_type cnt = 0;
   random_access_adapter<It> x = a;
@@ -1493,7 +1493,7 @@ public:
     >::value,
     "It parameter of xpath::iterator "
     "must be a cycled iterator "
-    "(because of empty_iterval logic)"
+    "(because of empty_interval logic)"
   );
   
   // NB hides random access from It
@@ -1520,6 +1520,38 @@ public:
     assert(empty_interval || test(current));
   }
 
+  //! constructs over an end iterator, end limit and test.
+  //! an end() iterator must be passed as x!
+  explicit iterator(
+    It x, 
+    const test_t& test_, 
+    node_iterators::end_t
+  ) 
+    : current(x), 
+      test(test_),
+      empty_interval(!skip_unmatched())
+  {
+    assert(empty_interval || test(current));
+    if (empty_interval)
+      --(current.get_ovf());
+  }
+
+  //! constructs over an end iterator, end limit and test
+  //! an end() iterator must be passed as x!
+  explicit iterator(
+    It x, 
+    test_t&& test_, 
+    node_iterators::end_t
+  ) 
+    : current(x), 
+      test(std::move(test_)),
+      empty_interval(!skip_unmatched())
+  {
+    assert(empty_interval || test(current));
+    if (empty_interval)
+      --(current.get_ovf());
+  }
+
   child_path_t path() const
   {
     return current.path();
@@ -1539,6 +1571,11 @@ public:
   bool is_same_context(const iterator& o) const
   {
     return current.is_same_context(o.current);
+  }
+
+  difference_type& get_ovf()
+  {
+    return current.get_ovf();
   }
 
   difference_type get_ovf() const
@@ -1567,7 +1604,7 @@ public:
 
   iterator& operator++()
   {
-    assert(test(current));
+    assert(empty_interval || test(current));
     next_matched();
     return *this;
   }
@@ -1696,7 +1733,7 @@ protected:
   //! result needs to be comparend with axis_t::xend().
   void next_matched()
   {
-    assert(!empty_interval);
+    //assert(!empty_interval);
     ++current;
     skip_unmatched();
   }
@@ -1781,7 +1818,8 @@ struct iterator<NodePtr, axis, Test>
   )
     : step1_iterator(
         prim_iterator(context, end), 
-        test
+        test,
+        end
       )
   {}
 };
@@ -1974,7 +2012,11 @@ public:
     iterator end()
     {
 //      SCHECK(context.is_valid());
-      return iterator(nested_result::end(), test);
+      return iterator(
+        nested_result::end(), 
+        test,
+        node_iterators::end_t()
+      );
     }
 
     typename iterator::size_type size(
@@ -2117,7 +2159,7 @@ public:
 
   xiterator xend()
   {
-    return xiterator(end(), test);
+    return xiterator(end(), test, node_iterators::end_t());
   }
 
   //! the number of nodes in the axis
