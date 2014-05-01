@@ -1520,20 +1520,17 @@ public:
     assert(empty_interval || test(current));
   }
 
-  //! constructs over an end iterator, end limit and test.
+  //! constructs over an end iterator, end limit and test
   //! an end() iterator must be passed as x!
   explicit iterator(
     It x, 
     const test_t& test_, 
     node_iterators::end_t
   ) 
-    : current(x), 
-      test(test_),
-      empty_interval(!skip_unmatched())
+    : iterator(x, test_)
   {
-    assert(empty_interval || test(current));
-    if (empty_interval)
-      --(current.get_ovf());
+    if (empty_interval && !current.is_empty()) 
+      --current.get_ovf();
   }
 
   //! constructs over an end iterator, end limit and test
@@ -1543,13 +1540,10 @@ public:
     test_t&& test_, 
     node_iterators::end_t
   ) 
-    : current(x), 
-      test(std::move(test_)),
-      empty_interval(!skip_unmatched())
+    : iterator(x, std::move(test_))
   {
-    assert(empty_interval || test(current));
-    if (empty_interval)
-      --(current.get_ovf());
+    if (empty_interval && !current.is_empty()) 
+      --current.get_ovf();
   }
 
   child_path_t path() const
@@ -1702,11 +1696,17 @@ protected:
   //! matches return false.
   bool skip_unmatched()
   {
+    if (current.is_empty())
+      return false;
+
     const auto max_ovf = current.get_ovf() + 1;
     while(!test(current)) {
       ++current;
       if (current.get_ovf() > max_ovf)
+      {
+        --(current.get_ovf());
         return false;
+      }
     }
     return true;
   }
@@ -1870,7 +1870,8 @@ struct iterator
           context, 
           std::forward<Predicates>(ps)...
         ),
-        p0
+        p0,
+        end
       )
   {}
 };

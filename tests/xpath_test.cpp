@@ -493,8 +493,8 @@ TEST(Xpath, XpathIterator)
 
       EXPECT_TRUE(xbegin.is_empty());
       EXPECT_TRUE(xend.is_empty());
-//      EXPECT_EQ(2, xbegin.get_ovf()); //debug test only
-//      EXPECT_EQ(2, xend.get_ovf());
+      EXPECT_EQ(1, xbegin.get_ovf()); //debug test only
+      EXPECT_EQ(1, xend.get_ovf());
       EXPECT_TRUE(xbegin.ovf_equal(xend));
       EXPECT_EQ(xbegin, xend);
       EXPECT_EQ(0, xend - xbegin);
@@ -599,8 +599,8 @@ TEST(Xpath, FirstExprOfStepIsFalse)
     ).execute(renderer::dom_visitor::node(r));
     auto bg = qr.begin();
     auto nd = qr.end();
-//    EXPECT_EQ(2, bg.get_ovf()); // debug only
-//    EXPECT_EQ(2, nd.get_ovf());
+    EXPECT_EQ(1, bg.get_ovf()); // debug only
+    EXPECT_EQ(1, nd.get_ovf());
     EXPECT_TRUE(bg.is_empty());
     EXPECT_TRUE(nd.is_empty());
     EXPECT_TRUE(bg.ovf_equal(nd));
@@ -623,8 +623,11 @@ TEST(Xpath, FirstExprOfStepIsFalse)
     ).execute(renderer::dom_visitor::node(r));
     auto bg = qr.begin();
     auto nd = qr.end();
-    EXPECT_EQ(2, bg.get_ovf());
-    EXPECT_EQ(2, nd.get_ovf());
+    EXPECT_EQ(1, bg.get_ovf());
+    EXPECT_EQ(1, nd.get_ovf());
+    EXPECT_TRUE(bg.is_empty());
+    EXPECT_TRUE(nd.is_empty());
+    EXPECT_TRUE(bg.ovf_equal(nd));
     EXPECT_EQ(0, size<decltype(qr)::query_type>(qr));
     }
 
@@ -642,8 +645,11 @@ TEST(Xpath, FirstExprOfStepIsFalse)
     ).execute(renderer::dom_visitor::node(r));
     auto bg = qr.begin();
     auto nd = qr.end();
-//    EXPECT_EQ(2, bg.get_ovf());
-//    EXPECT_EQ(2, nd.get_ovf());
+    EXPECT_EQ(1, bg.get_ovf());
+    EXPECT_EQ(1, nd.get_ovf());
+    EXPECT_TRUE(bg.is_empty());
+    EXPECT_TRUE(nd.is_empty());
+    EXPECT_TRUE(bg.ovf_equal(nd));
     EXPECT_EQ(0, size<decltype(qr)::query_type>(qr));
     }
   });
