@@ -37,10 +37,14 @@ void get_png::Execute()
     )
   );
 
-  LOG_DEBUG(log, 
+  LOG_INFO(log, 
     "task1: got " << list.size() << " objects");
+
+  if (list.empty())
+    return;
+
   for (auto ptr : list)
-    LOG_TRACE(log, ptr->universal_id() << '\t' << *ptr);
+    LOG_INFO(log, ptr->universal_id() << '\t' << *ptr);
 
   auto flash = list.cbegin();
   for(int k = 1; k < flash_num; k++)
