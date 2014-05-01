@@ -114,16 +114,23 @@ void node_obj::take_screenshot(
 class tmp_task : public CefTask
 {
 public:
-  tmp_task(node_obj& obj_) : obj(obj_) {}
+  tmp_task(
+    node_obj& obj_,
+    const std::string& fname_
+  ) 
+    : obj(obj_), 
+      fname(fname_)
+  {}
 
   void Execute() override
   {
     std::cout << "test_task::Execute()" << std::endl;
-    obj.take_screenshot("test_task.png", true);
+    obj.take_screenshot(fname, true);
   }
 
 protected:
   node_obj& obj;
+  std::string fname;
 
 private:
   IMPLEMENT_REFCOUNTING(test_task);
@@ -139,7 +146,7 @@ void node_obj::take_screenshot_delayed(
 
   CefPostDelayedTask(
     TID_RENDERER, 
-    new tmp_task(*this),
+    new tmp_task(*this, fname),
     std::chrono::duration_cast<std::chrono::milliseconds>
       (delay).count()
   );
