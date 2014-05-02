@@ -1,12 +1,11 @@
 // -*-coding: mule-utf-8-unix; fill-column: 58; -*-
 /**
  * @file
- * The xpath-like CefDOMNode finder.
+ * The xpath-like finder based on a generic node
+ * with CefDOMNode-like interface.
  *
  * @author Sergei Lodyagin
  */
-
-//TODO end_t iterator is begin() - 1 with ovf reset
 
 #ifndef OFFSCREEN_XPATH_H
 #define OFFSCREEN_XPATH_H
@@ -227,7 +226,7 @@ public:
 std::ostream&
 operator<< (std::ostream& out, const child_path_t& path);
 
-//! The namespace for internal usage by the node class only
+//! The namespace for internal usage by xpath
 namespace node_iterators {
 
 //! The end iterator marker for constructor
@@ -813,8 +812,8 @@ protected:
   //! set by go_xxx methods
   child_path_t child_path;
 
-  //! The end()+N (N>=0) iterator points to the same
-  //! this->current as end()-1.
+  //! The end()+N iterator points to the same
+  //! this->current as begin()+N+cycle_size
   difference_type ovf = 0;
 
   //! true if context and current are not initialized
@@ -1466,8 +1465,6 @@ operator-(
 
 //! The selective iterator. Selects only steps satisfied
 //! to a  test.
-//! @tparam iteration_lim limits number of steps used for
-//! match search to prevent an infinite loop.
 template<
   class It, 
   template<class> class Test
