@@ -17,6 +17,7 @@
 #include "screenshotter.h"
 #include "browser.h"
 #include "dom.h"
+#include "ipc.h"
 
 using namespace curr;
 

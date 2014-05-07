@@ -26,7 +26,7 @@ class entry_base
 public:
   struct Par 
   {
-    PAR_DEFAULT_ABSTRACT(base);
+    PAR_DEFAULT_ABSTRACT(entry_base);
     virtual std::string get_id() const = 0;
   };
 
@@ -47,10 +47,19 @@ template<int idx>
 struct pars<idx>
 {
   pars(CefRefPtr<CefProcessMessage> msg) {}
+
+  //! constructs from a tuple
+  pars(
+    CefRefPtr<CefProcessMessage> msg, 
+    std::tuple<>& tup
+  )
+  {}
 };
 
 template<int idx, class Arg0, class... Args>
-class pars<idx, Arg0, Args...> : public pars<idx, Args...>
+class pars<idx, Arg0, Args...> 
+  : public par<idx, Arg0>,
+    public pars<idx, Args...>
 {
 public:
   pars(
@@ -58,18 +67,20 @@ public:
     Arg0& a0,
     Args&... a
   )
-    : par(msg, a0), pars<idx, Args...>(msg, a)
+    : par<idx, Arg0>(msg, a0), 
+      pars<idx, Args...>(msg, a...)
   {}
 
   //! constructs from a tuple
-  template<class... TArgs>
   pars(
     CefRefPtr<CefProcessMessage> msg, 
-    std::tuple<TArgs...>& tup
+    std::tuple<Arg0, Args...>& tup
   )
     : pars<idx, Arg0, Args...>(
        msg, 
-       typename gens<std::tuple_size<Tuple>::value>::type(),
+       typename curr::tuple::gens<
+         sizeof...(Args) + 1
+       >::type(),
        tup
       )
   {}
@@ -79,7 +90,7 @@ protected:
   template<class... TArgs, int... S>
   pars(
     CefRefPtr<CefProcessMessage> msg, 
-    seq<S...>,
+    curr::tuple::seq<S...>,
     std::tuple<TArgs...>& tup
   )
     : pars<idx, Arg0, Args...>(msg, std::get<S>(tup)...)
@@ -93,7 +104,7 @@ struct par<idx, std::tuple<Args...>> : pars<idx, Args...>
     CefRefPtr<CefProcessMessage> msg, 
     std::tuple<Args...>& tup
   )
-    : pars(msg, tup)
+    : pars<idx, Args...>(msg, tup)
   {}
 };
 
