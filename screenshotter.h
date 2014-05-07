@@ -9,11 +9,25 @@
 #ifndef OFFSCREEN_SCREENSHOTTER_H
 #define OFFSCREEN_SCREENSHOTTER_H
 
+#include <string>
 #include <boost/multi_array.hpp>
 #include <png++/png.hpp>
 #include "include/cef_base.h"
 
 //namespace renderer {
+
+template<class...>
+struct take_screenshot;
+
+template<>
+struct take_screenshot<int, CefRect, std::string>
+{
+  take_screenshot(
+    int browser_id, 
+    const CefRect& r, 
+    const std::string& fname
+  ) { assert(0); }
+};
 
 //! Save 2d BGRA point array to png::image
 template<class point, class pixel>

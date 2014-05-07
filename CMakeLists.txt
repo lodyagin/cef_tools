@@ -25,6 +25,7 @@ set(offscreen_SOURCES
     browser.cpp
     dom.cpp
     dom_event.cpp
+    ipc.cpp
     offscreen.cpp
     proc_browser.cpp
     screenshotter.cpp

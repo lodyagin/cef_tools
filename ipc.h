@@ -9,12 +9,16 @@
 #ifndef OFFSCREEN_IPC_H
 #define OFFSCREEN_IPC_H
 
+#include <iostream>
 #include <string>
 #include <tuple>
 #include <unordered_map>
 #include "include/cef_process_message.h"
 #include "types/meta.h"
 #include "Repository.h"
+#include "SCommon.h"
+#include "SSingleton.h"
+#include "ipc_types.h"
 
 namespace ipc {
 namespace receiver {
@@ -27,11 +31,20 @@ public:
   struct Par 
   {
     PAR_DEFAULT_ABSTRACT(entry_base);
-    virtual std::string get_id() const = 0;
+    virtual std::string get_id(
+      const curr::ObjectCreationInfo& info
+    ) const = 0;
   };
 
+  virtual ~entry_base() {}
+
   virtual void call(CefRefPtr<CefProcessMessage> msg) = 0;
+
+  virtual std::string universal_id() const = 0;
 };
+
+std::ostream&
+operator<< (std::ostream& out, const entry_base& entr);
 
 // Builds a tuple of arguments upon a cef message
 template<int idx, class... Args>
@@ -46,6 +59,8 @@ struct pars;
 template<int idx>
 struct pars<idx>
 {
+  static constexpr int next_idx = idx; // no data here
+
   pars(CefRefPtr<CefProcessMessage> msg) {}
 
   //! constructs from a tuple
@@ -59,16 +74,19 @@ struct pars<idx>
 template<int idx, class Arg0, class... Args>
 class pars<idx, Arg0, Args...> 
   : public par<idx, Arg0>,
-    public pars<idx, Args...>
+    public pars<par<idx, Arg0>::next_idx, Args...>
 {
 public:
+  static constexpr int next_idx = 
+    pars<par<idx, Arg0>::next_idx, Args...>::next_idx;
+  
   pars(
     CefRefPtr<CefProcessMessage> msg, 
     Arg0& a0,
     Args&... a
   )
     : par<idx, Arg0>(msg, a0), 
-      pars<idx, Args...>(msg, a...)
+      pars<par<idx, Arg0>::next_idx, Args...>(msg, a...)
   {}
 
   //! constructs from a tuple
@@ -100,6 +118,8 @@ protected:
 template<int idx, class... Args>
 struct par<idx, std::tuple<Args...>> : pars<idx, Args...>
 {
+  static constexpr int next_idx = pars<idx, Args...>::next_idx;
+
   par(
     CefRefPtr<CefProcessMessage> msg, 
     std::tuple<Args...>& tup
@@ -110,10 +130,12 @@ struct par<idx, std::tuple<Args...>> : pars<idx, Args...>
 
 
 template<int idx, class Arg>
-class par<idx, Arg, decltype(Arg::to_tuple())>
+class par<idx, Arg, decltype((void)to_tuple(Arg()))>
 {
 public:
-  using tuple = decltype(Arg::to_tuple());
+  using tuple = decltype(to_tuple(Arg()));
+
+  static constexpr int next_idx = par<idx, tuple>::next_idx;
 
   par(CefRefPtr<CefProcessMessage> msg, Arg& arg)
   {
@@ -126,6 +148,8 @@ public:
 template<int idx>
 struct par<idx, int>
 {
+  static constexpr int next_idx = idx + 1;
+
   par(CefRefPtr<CefProcessMessage> msg, int& arg)
   {
     arg = msg->GetArgumentList()->GetInt(idx);
@@ -135,43 +159,47 @@ struct par<idx, int>
 template<int idx>
 struct par<idx, double>
 {
+  static constexpr int next_idx = idx + 1;
+
   par(CefRefPtr<CefProcessMessage> msg, double& arg)
   {
     arg = msg->GetArgumentList()->GetDouble(idx);
   }
 };
 
+// TODO if it lexical casts
 template<int idx>
 struct par<idx, std::string>
 {
+  static constexpr int next_idx = idx + 1;
+
   par(CefRefPtr<CefProcessMessage> msg, std::string& arg)
   {
     arg= msg->GetArgumentList()->GetString(idx).ToString();
   }
 };
 
-
-
 template<int idx>
 struct get<idx>
 {
   get(CefRefPtr<CefProcessMessage> msg) {}
-  std::tuple<> get_pars() const { return std::tuple<>(); }
+  std::tuple<> get_pars() const { return std::make_tuple(); }
 };
 
 template<int idx, class Arg0, class... Args>
 struct get<idx, Arg0, Args...> 
-  : par<idx, Arg0>, get<idx + 1, Args...>
+  : par<idx, Arg0>, get<par<idx, Arg0>::next_idx, Args...>
 {
   get(CefRefPtr<CefProcessMessage> msg)
-   : par(a), get/*<idx + 1, Args...>*/(msg)
+   : par<idx, Arg0>(msg, a), 
+     get<par<idx, Arg0>::next_idx, Args...>(msg)
   {}
 
   std::tuple<Arg0, Args...> get_pars() const
   {
     return std::tuple_cat(
-      std::tuple<Arg0>(a),
-      get<idx + 1, Args...>::get_pars()
+      std::make_tuple(a),
+      get<par<idx, Arg0>::next_idx, Args...>::get_pars()
     );
   }
 
@@ -181,33 +209,55 @@ struct get<idx, Arg0, Args...>
 template<class FunObj>
 class entry;
 
-template<class Fun, class Args...>
+template<template <class...> class Fun, class... Args>
 class entry<Fun<Args...>> : public entry_base
 {
 public:
   struct Par : entry_base::Par 
   {
-   
+    std::string get_id(
+      const curr::ObjectCreationInfo& info
+    ) const override
+    {
+      return curr::type<Fun<Args...>>::name();
+    }
+
+    entry_base* create_derivation(
+      const curr::ObjectCreationInfo& info
+    ) const override
+    {
+      return new entry<Fun<Args...>>;
+    }
   };
 
   void call(CefRefPtr<CefProcessMessage> msg) override
   {
-    assert(type<Fun<Args...>>::name() == msg->GetName());
-    curr::tuple::call<Fun<Args...>>(get<1, Args...>(msg));
+    assert(
+      curr::type<Fun<Args...>>::name() == 
+        msg->GetName().ToString()
+    );
+    curr::tuple::call<Fun<Args...>>(
+      get<1, Args...>(msg).get_pars()
+    );
+  }
+
+  std::string universal_id() const override
+  {
+    return curr::type<Fun<Args...>>::name();
   }
 };
 
 class repository final
-  : public Repository<
+  : public curr::Repository<
     entry_base, 
     entry_base::Par, 
     std::unordered_map,
     std::string
    >,
-   public SAutoSingleton<repository>
+   public curr::SAutoSingleton<repository>
 {
 public:
-  using ParentRepository = Repository<
+  using ParentRepository = curr::Repository<
     entry_base, 
     entry_base::Par, 
     std::unordered_map,
@@ -215,19 +265,24 @@ public:
   >;
 
   repository() 
-   : ParentRepository(type<repository>::name(), 0)
+   : ParentRepository(curr::type<repository>::name(), 0)
   { 
     this->complete_construction();
   }
   
-  ~repository()
-  {
-    this->destroy();
-  }
+  // @returns true if msg is processed
+  bool call(CefRefPtr<CefProcessMessage> msg);
 
-  void call(CefRefPtr<CefProcessMessage> msg);
+  template<class FunObj>
+  void reg()
+  {
+    this->create_object(typename entry<FunObj>::Par());
+  }
 };
 
+
+
+#if 0
 //! Represents the Fun parameters list as args<Fun>::tuple.
 template<class Fun>
 struct args;
@@ -237,6 +292,7 @@ struct args<void(Args...)>
 {
   using tuple = std::tuple<Args...>;
 };
+#endif
 
 /*
   An IPC call must contain tag string and signature.
@@ -265,7 +321,8 @@ struct args<void(Args...)>
 // to call method on an object: 
 // ObjType, IdType, Id, args::tuple
 
-}
+} // receiver
+} // ipc
 
 #endif
 

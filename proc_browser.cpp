@@ -11,6 +11,7 @@
 #include "proc_browser.h"
 #include "browser.h"
 #include "task.h"
+#include "ipc.h"
 
 using namespace curr;
 
@@ -42,6 +43,10 @@ void browser::OnContextInitialized()
   if(command_line->HasSwitch("off-screen"))
     par.window_info.SetAsOffScreen(nullptr);
   shared::browser_repository::instance().create_object(par);
+
+  ipc::receiver::repository::instance().reg<
+    take_screenshot<int, CefRect, std::string>
+  >();
 }
 
 render::render(int w, int h)
@@ -106,6 +111,9 @@ bool client::OnProcessMessageReceived(
   CefRefPtr<CefProcessMessage> msg
 )
 {
+#if 1
+  return ipc::receiver::repository::instance().call(msg);
+#else
   if (msg->GetName() == "take_screenshot") {
     LOG_DEBUG(log, "take_screenshot received");
     auto args = msg->GetArgumentList();
@@ -119,7 +127,7 @@ bool client::OnProcessMessageReceived(
       args->GetString(5).ToString()
     );
   }
-  return true;
+#endif
 }
 
 }}
