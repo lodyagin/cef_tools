@@ -86,9 +86,9 @@ int main(int argc, char* argv[])
     argc2, 
     argv2,
     [&renderer_test_result]() 
-    { renderer_test_result = RUN_ALL_TESTS(); },
+    { renderer_test_result = RUN_ALL_TESTS(); }/*,
     [&browser_test_result]() 
-    { browser_test_result = RUN_ALL_TESTS(); }
+    { browser_test_result = RUN_ALL_TESTS(); }*/
   );
   if (renderer_test_result)
     return renderer_test_result;

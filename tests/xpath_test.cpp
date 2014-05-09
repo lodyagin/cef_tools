@@ -695,7 +695,7 @@ int main(int argc, char* argv[])
     []()
     {
       CURR_WAIT_L(
-        Logger<LOG::Root>::logger(),
+        rootLogger,
         RHolder<shared::browser>(1) -> is_dom_ready(),
         60001
       );
