@@ -13,7 +13,6 @@
 #include "include/cef_client.h"
 #include "include/cef_render_handler.h"
 #include "Logging.h"
-//#include "RHolder.h"
 #include "browser.h"
 
 //! The code used by a browser process only
@@ -23,7 +22,15 @@ namespace handler {
 class browser : public CefBrowserProcessHandler
 {
 public:
+  browser(const std::function<void()>& on_init)
+    : on_context_init(on_init)
+  {}
+
   void OnContextInitialized() override;
+
+protected:
+  std::function<void()> on_context_init;
+  
 private:
   typedef curr::Logger<browser> log;
   IMPLEMENT_REFCOUNTING(browser);

@@ -11,6 +11,8 @@ int offscreen(
   int argc, 
   char* argv[],
   const std::function<void()>& render_thread =
+    std::function<void()>(),
+  const std::function<void()>& browser_thread =
     std::function<void()>()
 );
 

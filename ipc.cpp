@@ -8,7 +8,9 @@
 
 #include "ipc.h"
 
-//using namespace curr;
+namespace process {
+std::atomic<CefProcessId> current((cef_process_id_t)-1);
+}
 
 namespace ipc {
 namespace receiver {

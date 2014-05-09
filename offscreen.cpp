@@ -23,6 +23,7 @@
 #include "dom_event.h"
 #include "search.h"
 #include "screenshotter.h"
+#include "ipc.h"
 
 using namespace curr;
 
@@ -81,8 +82,12 @@ namespace shared {
 class application : public CefApp
 {
 public:
-  application(const std::function<void()>& render_thread)
-    : th_render(render_thread)
+  application(
+    const std::function<void()>& render_thread,
+    const std::function<void()>& browser_thread
+  )
+    : th_render(render_thread), 
+      th_browser(browser_thread)
   {}
 
   //! Gets CefBrowserProcessHandler from browser process
@@ -91,7 +96,7 @@ public:
   CefRefPtr<CefBrowserProcessHandler> 
   GetBrowserProcessHandler() override
   {
-    return new ::browser::handler::browser;
+    return new ::browser::handler::browser(th_browser);
   }
 
   CefRefPtr<CefRenderProcessHandler> 
@@ -101,7 +106,7 @@ public:
   }
 
 protected:
-  std::function<void()> th_render;
+  std::function<void()> th_render, th_browser;
 
 private:
   IMPLEMENT_REFCOUNTING(application);
@@ -112,14 +117,15 @@ private:
 int offscreen(
   int argc, 
   char* argv[],
-  const std::function<void()>& render_thread
+  const std::function<void()>& render_thread,
+  const std::function<void()>& browser_thread
 )
 {
   using namespace shared;
 
   const CefMainArgs main_args(argc, argv);
   CefRefPtr<application> app(
-    new application(render_thread)
+    new application(render_thread, browser_thread)
   );
 
   // Subprocess executor
@@ -228,6 +234,8 @@ void renderer::OnBrowserCreated(CefRefPtr<CefBrowser> br)
     browser_repository::instance().create_object
       (shared::browser::Par(br)) -> id;
   }
+
+  process::current = PID_RENDERER;
 
   // Start the on_create thread
   if (on_created 

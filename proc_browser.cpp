@@ -47,6 +47,15 @@ void browser::OnContextInitialized()
   ipc::receiver::repository::instance().reg<
     take_screenshot<int, CefRect, std::string>
   >();
+
+  process::current = PID_BROWSER;
+
+  if (on_context_init)
+  {
+    StdThread::create<LightThread>(
+      on_context_init, "browser_thread"
+    )->start();
+  }
 }
 
 render::render(int w, int h)

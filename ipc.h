@@ -9,16 +9,27 @@
 #ifndef OFFSCREEN_IPC_H
 #define OFFSCREEN_IPC_H
 
+#include <atomic>
 #include <iostream>
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <type_traits>
 #include "include/cef_process_message.h"
 #include "types/meta.h"
 #include "Repository.h"
 #include "SCommon.h"
+#include "SException.h"
 #include "SSingleton.h"
+#include "Logging.h"
+#include "RHolder.h"
+#include "browser.h"
 #include "ipc_types.h"
+#include "task.h"
+
+namespace process {
+extern std::atomic<CefProcessId> current;
+}
 
 namespace ipc {
 
@@ -48,6 +59,10 @@ namespace ipc {
 // 3.
 // to call method on an object: 
 // ObjType, IdType, Id, args::tuple
+
+struct log {
+  using l = curr::Logger<log>;
+};
 
 namespace par_ {
 
@@ -131,29 +146,6 @@ struct par<idx, std::tuple<Args...>&&>
   {}
 };
 
-#if 0
-template<int idx, class Arg>
-class par<
-  idx, 
-  Arg&, 
-  decltype((void)to_tuple(std::remove_reference<Arg>()))
->
-{
-public:
-  using tuple = 
-    decltype(to_tuple(std::remove_reference<Arg>()));
-
-  static constexpr int next_idx = 
-    par<idx, tuple>::next_idx;
-
-  par(CefRefPtr<CefProcessMessage> msg, Arg& arg)
-  {
-    tuple tup;
-    par<idx, tuple>(msg, tup);
-    arg = curr::tuple::aggregate_construct<Arg>(tup);
-  }
-};
-#else
 template<int idx, class Arg>
 class par<
   idx, 
@@ -169,18 +161,10 @@ public:
 
   static constexpr int next_idx = parent_par::next_idx;
 
-#if 1
   par(CefRefPtr<CefProcessMessage> msg, Arg& arg)
     : parent_par(msg, to_tuple(arg))
   {}
-#else
-  par(CefRefPtr<CefProcessMessage> msg, Arg& arg)
-  {
-    par<idx, tuple&>(msg, to_tuple(arg));
-  }
-#endif
 };
-#endif
 
 template<int idx>
 struct par<idx, int&>
@@ -190,6 +174,21 @@ struct par<idx, int&>
   par(CefRefPtr<CefProcessMessage> msg, int& arg)
   {
     arg = msg->GetArgumentList()->GetInt(idx);
+  }
+};
+
+template<int idx>
+struct par<idx, const int&>
+{
+  static constexpr int next_idx = idx + 1;
+
+  par(CefRefPtr<CefProcessMessage> msg, const int& arg)
+  {
+    msg->GetArgumentList()->SetInt(idx, arg);
+    LOG_TRACE(
+      log::l,
+      "SetInt(" << idx << ", " << arg << ')'
+    );
   }
 };
 
@@ -204,6 +203,21 @@ struct par<idx, double&>
   }
 };
 
+template<int idx>
+struct par<idx, const double&>
+{
+  static constexpr int next_idx = idx + 1;
+
+  par(CefRefPtr<CefProcessMessage> msg, const double& arg)
+  {
+    msg->GetArgumentList()->SetDouble(idx, arg);
+    LOG_TRACE(
+      log::l,
+      "SetDouble(" << idx << ", " << arg << ')'
+    );
+  }
+};
+
 // TODO if it lexical casts
 template<int idx>
 struct par<idx, std::string&>
@@ -213,28 +227,10 @@ struct par<idx, std::string&>
   par(CefRefPtr<CefProcessMessage> msg, std::string& arg)
   {
     arg= msg->GetArgumentList()->GetString(idx).ToString();
-  }
-};
-
-template<int idx>
-struct par<idx, const int&>
-{
-  static constexpr int next_idx = idx + 1;
-
-  par(CefRefPtr<CefProcessMessage> msg, const int& arg)
-  {
-    msg->GetArgumentList()->SetInt(idx, arg);
-  }
-};
-
-template<int idx>
-struct par<idx, const double&>
-{
-  static constexpr int next_idx = idx + 1;
-
-  par(CefRefPtr<CefProcessMessage> msg, const double& arg)
-  {
-    msg->GetArgumentList()->SetDouble(idx, arg);
+    LOG_TRACE(
+      log::l,
+      "SetString(" << idx << ", " << arg << ')'
+    );
   }
 };
 
@@ -249,6 +245,25 @@ struct par<idx, const std::string&>
   )
   {
     msg->GetArgumentList()->SetString(idx, arg);
+  }
+};
+
+// string lexem put only
+template<int idx, size_t N>
+struct par<idx, const char(&)[N]>
+{
+  static constexpr int next_idx = idx + 1;
+
+  par(
+    CefRefPtr<CefProcessMessage> msg, 
+    const std::string arg
+  )
+  {
+    msg->GetArgumentList()->SetString(idx, arg);
+    LOG_TRACE(
+      log::l,
+      "SetString(" << idx << ", " << arg << ')'
+    );
   }
 };
 
@@ -282,14 +297,10 @@ operator<< (std::ostream& out, const entry_base& entr);
 namespace receiver_ {
 
 // Builds a tuple of arguments upon a cef message
+// TODO it is the same as sender_::put or even par_::pars,
+// remove unnecessary code
 template<int idx, class... Args>
 struct get;
-
-//} // receiver_
-//} // receiver
-
-//namespace receiver {
-//namespace receiver_ {
 
 template<int idx>
 struct get<idx>
@@ -493,29 +504,94 @@ struct put<idx>
 
 template<int idx, class Arg0, class... Args>
 struct put<idx, Arg0, Args...>
-  : par_::par<idx, Arg0>,
-    put<par_::par<idx, Arg0>::next_idx, Args...>
+  : par_::par<idx, const Arg0&>,
+    put<
+      par_::par<idx, const Arg0&>::next_idx, 
+      Args...
+    >
 {
-  put(CefRefPtr<CefProcessMessage> msg, Arg0 a0, Args... a)
-    : par_::par<idx, Arg0>(msg, a0),
-      put<par_::par<idx, Arg0>::next_idx, Args...>
-        (msg, a...)
+  put(
+    CefRefPtr<CefProcessMessage> msg, 
+    Arg0 a0, 
+    Args... a
+  )
+    : par_::par<idx, const Arg0&>(msg, a0),
+      put<par_::par<idx, const Arg0&>::next_idx, Args...> 
+        (msg, std::forward<Args>(a)...)
   {}
 };
 
 } // sender_
 
-template<template<class...> class Fun, class... Args>
-void send(Args&&... args)
+template<template<class...> class Fun, class Dest, class... Args>
+void send(CefProcessId proc_id, Dest dst, Args&&... args)
 {
+  std::cout << "CefPostTask:2" << std::endl;
+  LOG_TRACE(
+    log::l,
+    "CefProcessMessage::Create(\""
+    << curr::type<
+         Fun<typename std::remove_reference<Args>::type...>
+       >::name() << ')'
+  );
   CefRefPtr<CefProcessMessage> msg = 
     CefProcessMessage::Create(
-      curr::type<Fun<Args...>>::name()
+      // use the type signature as a message tag
+      curr::type<
+        Fun<typename std::remove_reference<Args>::type...>
+      >::name()
     );
-  sender_::put<1, Args&&...>(msg, std::forward<Args>(args)...);
+  sender::sender_::put<1, Args&&...>(msg, std::forward<Args>(args)...);
+  LOG_TRACE(log::l, "dst->SendProcessMessage(...)");
+  dst->SendProcessMessage(proc_id, msg);
 }
 
 } // sender
+
+//! Send call from any thread
+template<template<class...> class Fun, class... Args>
+void send(Args&&... args)
+{
+  switch (process::current)
+  {
+  case PID_RENDERER: // renderer -> browser
+  {
+    // TODO browser_id
+    auto dst = curr::RHolder<shared::browser>(1) 
+      -> get_cef_browser();
+
+    task::exec(
+      TID_RENDERER, 
+      sender::send<
+        Fun, 
+        decltype(dst),
+        typename std::add_lvalue_reference<Args>::type...
+      >,
+      PID_BROWSER, 
+      dst,
+      std::forward<Args>(args)...
+    );
+    break;
+  }
+#if 0
+  case PID_BROWSER:
+    task::exec(
+      TID_UI, 
+      proc_id,
+      dst,
+      sender::send<
+        Fun, 
+        typename std::add_lvalue_reference<Args>::type...
+      >, 
+      std::forward<Args>(args)...
+    );
+    break;
+#endif
+  default:
+    THROW_PROGRAM_ERROR;
+  }
+}
+
 } // ipc
 
 #endif
